@@ -8,3 +8,4 @@ uv tool install poethepoet
 # Shell tools
 sudo apt install fish
 
+uv tool install podman-compose

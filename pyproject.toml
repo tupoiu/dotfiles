@@ -5,3 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = []
+
+[tool.poe.tasks]
+# We use cgroupfs because WSL doesn't work normally with cgroups
+build-claude = "podman build --cgroup-manager=cgroupfs -t claude-default claude-docker"
