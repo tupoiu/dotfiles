@@ -92,4 +92,7 @@ RUN chmod +x /usr/local/bin/init-firewall.sh && \
   echo "node ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh" > /etc/sudoers.d/node-firewall && \
   chmod 0440 /etc/sudoers.d/node-firewall
 USER node
+RUN uv tool install poethepoet
+ENV PATH="/home/node/.local/bin:$PATH"
+
 COPY --chown=node:node claude-settings.json /home/node/.claude/settings.json
