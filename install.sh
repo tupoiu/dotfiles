@@ -1,5 +1,5 @@
 # Install Rust/Cargo
-sudo apt install rustup
+snap install rustup
 
 # Python tools
 cargo install --locked uv
