@@ -93,6 +93,8 @@ RUN chmod +x /usr/local/bin/init-firewall.sh && \
   chmod 0440 /etc/sudoers.d/$USERNAME-firewall
 USER $USERNAME
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+RUN . "$HOME/.cargo/env" && cargo install cargo-binstall
+RUN . "$HOME/.cargo/env" && cargo binstall -y jj-cli
 RUN uv tool install poethepoet
 ENV PATH="/home/$USERNAME/.local/bin:$PATH"
 
