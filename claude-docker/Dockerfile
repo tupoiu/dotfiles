@@ -30,11 +30,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=ghcr.io/astral-sh/uv:0.11.2 /uv /uvx /usr/local/bin/
 
+ARG USERNAME=node
+
 # Ensure default node user has access to /usr/local/share
 RUN mkdir -p /usr/local/share/npm-global && \
-  chown -R node:node /usr/local/share
-
-ARG USERNAME=node
+  chown -R $USERNAME:$USERNAME /usr/local/share
 
 # Persist bash history.
 RUN SNIPPET="export PROMPT_COMMAND='history -a' && export HISTFILE=/commandhistory/.bash_history" \
@@ -46,8 +46,8 @@ RUN SNIPPET="export PROMPT_COMMAND='history -a' && export HISTFILE=/commandhisto
 ENV DEVCONTAINER=true
 
 # Create workspace and config directories and set permissions
-RUN mkdir -p /workspace /home/node/.claude && \
-  chown -R node:node /workspace /home/node/.claude
+RUN mkdir -p /workspace /home/$USERNAME/.claude && \
+  chown -R $USERNAME:$USERNAME /workspace /home/$USERNAME/.claude
 
 WORKDIR /workspace
 
@@ -58,7 +58,7 @@ RUN ARCH=$(dpkg --print-architecture) && \
   rm "git-delta_${GIT_DELTA_VERSION}_${ARCH}.deb"
 
 # Set up non-root user
-USER node
+USER $USERNAME
 
 # Install global packages
 ENV NPM_CONFIG_PREFIX=/usr/local/share/npm-global
@@ -89,11 +89,11 @@ RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 COPY init-firewall.sh /usr/local/bin/
 USER root
 RUN chmod +x /usr/local/bin/init-firewall.sh && \
-  echo "node ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh" > /etc/sudoers.d/node-firewall && \
-  chmod 0440 /etc/sudoers.d/node-firewall
-USER node
+  echo "$USERNAME ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh" > /etc/sudoers.d/$USERNAME-firewall && \
+  chmod 0440 /etc/sudoers.d/$USERNAME-firewall
+USER $USERNAME
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 RUN uv tool install poethepoet
-ENV PATH="/home/node/.local/bin:$PATH"
+ENV PATH="/home/$USERNAME/.local/bin:$PATH"
 
-COPY --chown=node:node claude-settings.json /home/node/.claude/settings.json
+COPY --chown=$USERNAME:$USERNAME claude-settings.json /home/$USERNAME/.claude/settings.json
