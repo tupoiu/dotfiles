@@ -15,6 +15,7 @@ pre-commit install
 # Claude credentials (needed for container mounts)
 mkdir -p ~/.claude
 touch ~/.claude.json
+ln -sf (realpath claude-docker/claude-settings.json) ~/.claude/settings.json
 
 # Fish functions
 mkdir -p ~/.config/fish/functions
