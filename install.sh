@@ -9,3 +9,9 @@ uv tool install poethepoet
 sudo apt install fish
 
 uv tool install podman-compose
+
+# Fish functions
+mkdir -p ~/.config/fish/functions
+for f in fish/functions/*.fish
+    ln -sf (realpath $f) ~/.config/fish/functions/(basename $f)
+end
