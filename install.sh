@@ -10,6 +10,10 @@ sudo apt install fish
 
 uv tool install podman-compose
 
+# Claude credentials (needed for container mounts)
+mkdir -p ~/.claude
+touch ~/.claude.json
+
 # Fish functions
 mkdir -p ~/.config/fish/functions
 for f in fish/functions/*.fish
