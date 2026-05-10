@@ -1,3 +1,8 @@
+# Build rust tools in parallel with main image
+FROM docker.io/library/rust:slim-bookworm AS rust-tools
+RUN cargo install cargo-binstall
+RUN cargo binstall -y jj-cli
+
 FROM node:20
 
 ARG TZ
@@ -93,8 +98,7 @@ RUN chmod +x /usr/local/bin/init-firewall.sh && \
   chmod 0440 /etc/sudoers.d/$USERNAME-firewall
 USER $USERNAME
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-RUN . "$HOME/.cargo/env" && cargo install cargo-binstall
-RUN . "$HOME/.cargo/env" && cargo binstall -y jj-cli
+COPY --from=rust-tools /usr/local/cargo/bin/jj /usr/local/cargo/bin/cargo-binstall /usr/local/bin/
 RUN uv tool install poethepoet
 ENV PATH="/home/$USERNAME/.local/bin:$PATH"
 
