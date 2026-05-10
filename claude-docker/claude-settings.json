@@ -1,1 +1,11 @@
-{"theme":"light"}
+{
+  "theme": "light",
+  "permissions": {
+    "allow": [
+      "Bash(jj diff*)",
+      "Bash(jj log*)",
+      "Bash(jj status*)",
+      "Bash(jj show*)"
+    ]
+  }
+}
