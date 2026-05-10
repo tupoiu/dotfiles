@@ -9,6 +9,8 @@ uv tool install poethepoet
 sudo apt install fish
 
 uv tool install podman-compose
+uv tool install pre-commit
+pre-commit install
 
 # Claude credentials (needed for container mounts)
 mkdir -p ~/.claude
