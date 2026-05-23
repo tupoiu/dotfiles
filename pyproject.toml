@@ -6,6 +6,15 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = []
 
+[dependency-groups]
+dev = [
+  "pytest",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 [tool.poe.tasks]
 # We use cgroupfs because WSL doesn't work normally with cgroups
 build-claude = "podman build --cgroup-manager=cgroupfs -t claude-default claude-docker"
+test-claude = "pytest tests/"
