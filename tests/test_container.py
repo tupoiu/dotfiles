@@ -32,11 +32,6 @@ def test_tool_available(cmd: str) -> None:
     assert result.returncode == 0, f"{cmd!r} failed:\n{result.stderr}"
 
 
-def test_default_shell_is_zsh() -> None:
-    result = run("[ \"$SHELL\" = /bin/zsh ]")
-    assert result.returncode == 0
-
-
 def test_workspace_dir_exists() -> None:
     result = run("[ -d /workspace ]")
     assert result.returncode == 0
@@ -47,12 +42,11 @@ def test_claude_dir_exists() -> None:
     assert result.returncode == 0
 
 
-def test_zsh_prompt_shows_git_status() -> None:
+def test_prompt_shows_git_status() -> None:
     """Prompt renders git branch info when inside a git repo."""
     script = (
         "git init /tmp/testrepo -b main && "
-        "cd /tmp/testrepo && "
-        "zsh -i -c 'cd /tmp/testrepo && print -P \"$PROMPT\"'"
+        "fish -c 'cd /tmp/testrepo; fish_prompt'"
     )
     result = run(script)
     assert result.returncode == 0
