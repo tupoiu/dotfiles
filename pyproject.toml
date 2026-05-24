@@ -17,4 +17,4 @@ testpaths = ["tests"]
 [tool.poe.tasks]
 # We use cgroupfs because WSL doesn't work normally with cgroups
 build-claude = "podman build --cgroup-manager=cgroupfs -t claude-default claude-docker"
-test-claude = "pytest tests/"
+test-claude = {cmd = "pytest tests/", executor = "uv" }
