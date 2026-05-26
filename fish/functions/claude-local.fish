@@ -4,5 +4,6 @@ function claude-local --description 'Run claude-default container with Pro login
         -v ~/.claude.json:/home/node/.claude.json \
         -v (pwd):/workspace \
         -v ~/.config/jj:/home/node/.config/jj \
+        -v ~/.helpers:/home/node/.helpers:ro \
         -w /workspace claude-default /bin/fish $argv
 end

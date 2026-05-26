@@ -24,3 +24,11 @@ mkdir -p ~/.config/fish/functions
 for f in fish/functions/*.fish; do
     ln -sf $(realpath $f) ~/.config/fish/functions/$(basename $f)
 done
+
+# Bash helpers
+mkdir -p ~/.helpers
+for f in bash-helpers/*.sh; do
+    cp $(realpath $f) ~/.helpers/$(basename $f .sh)
+    chmod +x ~/.helpers/$(basename $f .sh)
+done
+fish -c 'fish_add_path ~/.helpers'

@@ -89,4 +89,4 @@ USER $USERNAME
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 COPY --from=rust-tools /usr/local/cargo/bin/jj /usr/local/cargo/bin/cargo-binstall /usr/local/bin/
 RUN uv tool install poethepoet
-ENV PATH="/home/$USERNAME/.local/bin:$PATH"
+ENV PATH="/home/$USERNAME/.helpers:/home/$USERNAME/.local/bin:$PATH"
