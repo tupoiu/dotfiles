@@ -9,10 +9,12 @@ dependencies = []
 [dependency-groups]
 dev = [
   "pytest",
+  "pytest-xdist>=3.8.0",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-n 6"
 
 [tool.poe.tasks]
 # We use cgroupfs because WSL doesn't work normally with cgroups
