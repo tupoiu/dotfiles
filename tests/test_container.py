@@ -12,24 +12,37 @@ def run(cmd: str) -> subprocess.CompletedProcess:
     )
 
 
-@pytest.mark.parametrize("cmd", [
-    "claude --version",
-    "git --version",
-    "jj --version",
-    "gh --version",
-    "delta --version",
-    "fzf --version",
-    "jq --version",
-    "fish --version",
-    "zsh --version",
-    "uv --version",
-    "poe --version",
-    "vim --version",
-    "nano --version",
-])
-def test_tool_available(cmd: str) -> None:
-    result = run(cmd)
-    assert result.returncode == 0, f"{cmd!r} failed:\n{result.stderr}"
+def test_tools_available() -> None:
+    tools = [
+        "claude --version",
+        "git --version",
+        "jj --version",
+        "gh --version",
+        "delta --version",
+        "fzf --version",
+        "jq --version",
+        "fish --version",
+        "zsh --version",
+        "uv --version",
+        "poe --version",
+        "vim --version",
+        "nano --version",
+    ]
+    # Run all checks in one container; emit per-tool results for diagnosis.
+    script = "; ".join(
+        f'echo "CHECK {cmd.split()[0]}"; {cmd} >/dev/null 2>&1 && echo "OK" || echo "FAIL"'
+        for cmd in tools
+    )
+    result = run(script)
+    failures = []
+    lines = result.stdout.splitlines()
+    for i, line in enumerate(lines):
+        if line.startswith("CHECK "):
+            tool = line.removeprefix("CHECK ")
+            status = lines[i + 1] if i + 1 < len(lines) else "FAIL"
+            if status != "OK":
+                failures.append(tool)
+    assert not failures, f"Tools not available in image: {', '.join(failures)}"
 
 
 def test_workspace_dir_exists() -> None:
