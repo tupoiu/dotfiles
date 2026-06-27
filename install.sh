@@ -6,6 +6,8 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 sudo apt install -y build-essential
 sudo apt install -y mold clang
 
+sudo apt install -y jq  # used by claude-statusline / claude-jj-checkpoint helpers
+
 cargo install cargo-binstall
 
 cargo binstall -y jj-cli
