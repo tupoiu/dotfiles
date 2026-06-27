@@ -11,6 +11,11 @@ cargo install cargo-binstall
 cargo binstall -y jj-cli
 cargo binstall -y uv
 
+# jj config
+jj config set --user user.name "Peter Tupoiu"
+jj config set --user user.email "54478352+tupoiu@users.noreply.github.com"
+jj config set --user ui.editor vim
+
 # Python tools
 uv tool install poethepoet
 
