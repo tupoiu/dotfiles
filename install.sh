@@ -1,17 +1,32 @@
 #!/usr/bin/bash
 
 # Install Rust/Cargo
-snap install rustup
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+
+sudo apt install -y build-essential
+sudo apt install -y mold clang
+
+cargo install cargo-binstall
+
+cargo binstall -y jj-cli
+cargo binstall -y uv
 
 # Python tools
-cargo install --locked uv
 uv tool install poethepoet
 
 # Shell tools
-sudo apt install fish
+sudo apt install -y fish
+uv tool update-shell
+source ~/.profile
+fish -c 'fish_add_path ~/.local/bin'
 
+# Podman
+sudo apt install -y podman
 uv tool install podman-compose
+
+# Pre-commit
 uv tool install pre-commit
+source ~/.profile
 pre-commit install
 
 # Claude credentials (needed for container mounts)
@@ -32,3 +47,6 @@ for f in bash-helpers/*.sh; do
     chmod +x ~/.helpers/$(basename $f .sh)
 done
 fish -c 'fish_add_path ~/.helpers'
+
+# Make fish the default shell
+sudo chsh -s "$(which fish)" $USER
