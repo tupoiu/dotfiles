@@ -1,5 +1,9 @@
 {
   "theme": "light",
+  "statusLine": {
+    "type": "command",
+    "command": "claude-statusline"
+  },
   "permissions": {
     "allow": [
       "Bash(jj diff*)",
