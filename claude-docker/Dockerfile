@@ -78,6 +78,10 @@ ENV VISUAL=vim
 # Install Claude
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 
+# Bake in the Superpowers plugin from the official marketplace at build time
+# (network is open during build) so it works offline behind init-firewall.sh.
+RUN claude plugin install superpowers@claude-plugins-official
+
 
 # Copy and set up firewall script
 COPY init-firewall.sh /usr/local/bin/
