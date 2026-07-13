@@ -12,6 +12,8 @@ cargo install cargo-binstall
 
 cargo binstall -y jj-cli
 cargo binstall -y uv
+cargo binstall -y zellij  # optional
+cargo binstall -y watchexec-cli  # optional
 
 # jj config
 jj config set --user user.name "Peter Tupoiu"
