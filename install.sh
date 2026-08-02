@@ -7,11 +7,13 @@ sudo apt install -y build-essential
 sudo apt install -y mold clang
 
 sudo apt install -y jq  # used by claude-statusline / claude-jj-checkpoint helpers
+sudo apt install -y bubblewrap  # sandbox backend Claude Code shells out to on Linux
 
 cargo install cargo-binstall
 
 cargo binstall -y jj-cli
 cargo binstall -y uv
+cargo binstall -y ripgrep
 cargo binstall -y zellij  # optional
 cargo binstall -y watchexec-cli  # optional
 
@@ -25,6 +27,7 @@ uv tool install poethepoet
 
 # Shell tools
 sudo apt install -y fish
+sudo apt install -y fzf
 uv tool update-shell
 source ~/.profile
 fish -c 'fish_add_path ~/.local/bin'
