@@ -30,7 +30,13 @@
   }
 
   function paint() {
-    files.forEach((f, i) => f.classList.toggle("focused", i === cursor));
+    // Clear across every wrapper, not just the navigable ones: a file that the
+    // reviewed filter has just hidden is no longer in `files` and would keep
+    // the class forever.
+    for (const f of document.querySelectorAll("#diff .d2h-file-wrapper.focused")) {
+      f.classList.remove("focused");
+    }
+    if (cursor >= 0 && files[cursor]) files[cursor].classList.add("focused");
   }
 
   function focus(index) {

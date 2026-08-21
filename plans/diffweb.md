@@ -23,6 +23,10 @@ See `diffweb/README.md` for how to run it and `diffweb/ROADMAP.md` for ideas.
 - [x] Collapsible file diffs — header/chevron click, collapse-all, state persisted per worktree in `localStorage` (`diffweb/static/worktree.js:26`); survives re-render and reload
 - [x] Isolated tests — 46 pass against a temp git world; suite passes with no `~/code` present
 - [x] `uv sync` is the whole install; `install.sh` untouched
+- [x] Branch context — PR chip via `gh`, behind-base count, dirty marker (`diffweb/forge.py`) — catalog shows a chip for the one branch that has a PR; every gh failure mode degrades to no chip
+- [x] Keyboard navigation and sticky file headers (`diffweb/static/keys.js`) — j/k/o/v/c/s/? all driven in a browser; a header stays pinned below the toolbar while scrolling
+- [x] Noise control — auto-collapse generated files, per-file churn, hide-reviewed (`diffweb/gitio.py:181`) — Cargo.lock and uv.lock start collapsed; reopening one sticks across reloads
+- [x] Merge the three onto `diffweb-integrated` and serve it — 72 tests pass, all three features verified working together on :8765
 - [ ] Open-in-editor links — deliberately deferred, see ROADMAP
 - [ ] code-server + GitLens comparison — never spiked, nothing was running on this VM
 
@@ -59,6 +63,30 @@ See `diffweb/README.md` for how to run it and `diffweb/ROADMAP.md` for ideas.
   pre-existing failures in `tests/test_container.py` and `tests/test_playwright_container.py`
   are that, not diffweb.
 
+### From the three-worktree round
+
+- **diff2html already had sticky file headers.** They looked broken only because
+  it pins them at `top: 0`, underneath our own sticky toolbar, and its
+  two-class selector outranked a one-class override. Check the vendored CSS for
+  an existing mechanism before building one.
+- **`gh pr list --head master` finds a PR on `~/code`.** A chip can therefore
+  appear on a worktree you think of as "not a branch"; that is honest, not a bug.
+- **The features collide in two places, both invisible until merged.** Keyboard
+  nav walked files that `hide reviewed` had removed from the page, and the focus
+  ring was cleared per-navigable-file so a hidden file kept it forever. Anything
+  that filters the file list and anything that walks it have to agree on what
+  "the files" means.
+- **Naive conflict resolution silently spliced two test bodies together.** The
+  merges were all "both branches appended at the same anchor", so keeping both
+  sides worked for CSS and prose — but for Python it grafted one test's tail onto
+  another and still parsed. The suite caught it; reading the diff would not have.
+- **The tool now finds its own worktrees**, because `~/worktrees/*/*` matches
+  `~/worktrees/dotfiles/*`. Unplanned, and the best dogfooding available.
+
 ## Verify
 
 `uv sync && poe fetch-diffweb-assets && poe diffweb`, then `uv run pytest tests/test_diffweb.py`.
+
+Feature branches live on `diffweb-pr-links`, `diffweb-review-ergo` and
+`diffweb-noise-control`; `diffweb-integrated` is all three merged and is what
+runs on :8765.
