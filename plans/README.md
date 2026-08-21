@@ -23,6 +23,13 @@ Decisions / gotchas whenever something surprises you.
 - Discovered: <the surprise worth remembering>
 ```
 
+## Before handing work back
+
+Take a screenshot of the page that is actually running - the instance the user
+will open, not a fresh one - and look at it. Tests and a green diff do not show
+you a control rendering as a tofu box, a colour with no contrast, or a layout
+that wrapped. If the project has no UI, run the thing and read its real output.
+
 ## What belongs here
 
 - **Steps with verifications.** Each chunk ends in something observable, not a

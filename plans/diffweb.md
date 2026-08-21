@@ -88,12 +88,22 @@ See `diffweb/README.md` for how to run it and `diffweb/ROADMAP.md` for ideas.
   delegation.** Rows navigate from their own click handler, so the refresh
   button needed a capture-phase listener; stopping propagation on the button
   itself meant the delegated handler never ran at all.
+- **A control must not depend on the font having its glyph.** The 🔄 refresh
+  emoji drew a tofu box: this machine has Noto Color Emoji installed, but
+  `fc-match` on U+1F504 resolves to WenQuanYi Zen Hei, which has no coverage,
+  and naming an emoji font stack in CSS did not rescue it. Replaced with an
+  inline SVG. Only looking at a screenshot caught this - every test passed.
 - **The tool now finds its own worktrees**, because `~/worktrees/*/*` matches
   `~/worktrees/dotfiles/*`. Unplanned, and the best dogfooding available.
 
 ## Verify
 
 `uv sync && poe fetch-diffweb-assets && poe diffweb`, then `uv run pytest tests/test_diffweb.py`.
+
+**Before handing back, screenshot the page that is actually running and look at
+it.** Not a fresh instance, not the tests - the server the user will open. Use
+the full `chromium` build, not `chrome-headless-shell`, which renders some
+glyphs differently from a real browser.
 
 Feature branches live on `diffweb-pr-links`, `diffweb-review-ergo` and
 `diffweb-noise-control`; `diffweb-integrated` is all three merged and is what

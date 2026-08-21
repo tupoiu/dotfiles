@@ -86,8 +86,10 @@ difftastic's palette is tuned for a dark terminal.
 an amber dot when there are uncommitted files, and a PR chip.
 
 The chip is either `#4312 18w` - a link to the pull request, plus how long ago it
-was opened - or `No PR (🔄 2d)`, where the duration is how long ago we last managed
-to ask. Clicking the 🔄 asks again straight away.
+was opened - or `No PR (⟳ 2d)`, where the duration is how long ago we last managed
+to ask. Clicking the refresh glyph asks again straight away. It is an inline SVG
+rather than the 🔄 emoji, which renders as a tofu box on a machine whose font
+config has no emoji coverage.
 
 PRs come from `gh pr list --head <branch>`, stored in the state DB rather than in
 memory so the age is honest across restarts, and refreshed in the background once

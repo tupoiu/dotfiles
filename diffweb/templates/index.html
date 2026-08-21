@@ -37,8 +37,11 @@
              title="opened {{ s.pr.pr.opened_age }} ago">{{ s.pr.pr.opened_age }}</span>{% endif -%}
         {%- else -%}
           <span class="pr-chip pr-none">No PR
-            (<button type="button" class="pr-refresh"
-                     title="Checked {{ s.pr.checked_age }} ago. Check again.">&#128260;</button>
+            (<button type="button" class="pr-refresh" aria-label="Check for a PR again"
+                     title="Checked {{ s.pr.checked_age }} ago. Check again."><svg
+                viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor"
+                stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+                aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg></button>
             <span class="pr-checked">{{ s.pr.checked_age }}</span>)</span>
         {%- endif -%}
       </td>
