@@ -237,6 +237,24 @@ def structural_diff(path: str, start: str, end: str, difft: str | None = None) -
     return run_git(path, "diff", "--ext-diff", *_diff_args(start, end), env=env)
 
 
+def ahead_behind(path: str, base: str, head: str = "HEAD") -> tuple[int, int]:
+    """Commits on head not in base, and vice versa - the second half tells you
+    the branch has fallen behind and the diff may be misleading."""
+    base_sha = resolve_ref(path, base)
+    head_sha = resolve_ref(path, head)
+    out = _try_git(path, "rev-list", "--left-right", "--count", f"{base_sha}...{head_sha}")
+    if not out:
+        return (0, 0)
+    behind, ahead = out.split()
+    return (int(ahead), int(behind))
+
+
+def dirty_count(path: str) -> int:
+    """Files with uncommitted changes, staged or not."""
+    out = _try_git(path, "status", "--porcelain") or ""
+    return sum(1 for line in out.splitlines() if line.strip())
+
+
 @dataclass
 class Summary:
     worktree: Worktree
@@ -248,6 +266,9 @@ class Summary:
     removed: int
     last_commit: str
     reviewed: int = 0
+    behind: int = 0
+    dirty: int = 0
+    pr: object | None = None
     error: str | None = None
 
 
@@ -255,15 +276,18 @@ def summarise(wt: Worktree, base: str) -> Summary:
     try:
         mb = merge_base(wt.path, base)
         stats = numstat(wt.path, mb, WORKTREE)
+        ahead, behind = ahead_behind(wt.path, base)
         return Summary(
             worktree=wt,
             base=base,
             merge_base=mb,
-            ahead=len(commits(wt.path, mb, "HEAD")),
+            ahead=ahead,
             files=len(stats),
             added=sum(int(r["added"] or 0) for r in stats),
             removed=sum(int(r["removed"] or 0) for r in stats),
             last_commit=(_try_git(wt.path, "log", "-1", "--format=%ar") or "").strip(),
+            behind=behind,
+            dirty=dirty_count(wt.path),
         )
     except (GitError, ValueError) as exc:
         return Summary(wt, base, "", 0, 0, 0, 0, "", error=str(exc))

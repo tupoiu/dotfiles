@@ -16,7 +16,7 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
-from diffweb import gitio
+from diffweb import forge, gitio
 from diffweb.config import DiffwebConfig, load_config
 from diffweb.gitio import WORKTREE
 from diffweb.state import State
@@ -84,6 +84,24 @@ def config(world: dict[str, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPat
     )
     monkeypatch.setenv("DIFFWEB_CONFIG", str(cfg_path))
     return load_config()
+
+
+@pytest.fixture
+def fake_gh(tmp_path: Path) -> Path:
+    """A stand-in for `gh pr list` so tests never touch the network.
+
+    It records each invocation so the caching test can count calls.
+    """
+    script = tmp_path / "gh"
+    counter = tmp_path / "gh-calls"
+    script.write_text(
+        "#!/bin/sh\n"
+        f"printf x >> {counter}\n"
+        'printf \'[{"number":42,"title":"Add the thing",'
+        '"url":"https://example.invalid/pr/42","state":"OPEN","isDraft":true}]\'\n'
+    )
+    script.chmod(0o755)
+    return script
 
 
 @pytest.fixture
@@ -433,3 +451,92 @@ def test_structural_renders(client: TestClient, config: DiffwebConfig, tmp_path:
     body = client.get(f"/api/w/{wid}/diff", params={"renderer": "structural"}).json()
     assert body["renderer"] == "structural"
     assert "c.txt" in body["html"]
+
+
+# --- branch context (PR links, ahead/behind, dirty) -----------------------
+
+
+def test_ahead_behind_counts(world: dict[str, Path]) -> None:
+    repo = str(world["repo"])
+    assert gitio.ahead_behind(repo, "origin/master") == (2, 0)
+    # Move origin/master on so the branch is genuinely behind.
+    other = world["root"] / "clone"
+    git(world["root"], "clone", "-q", str(world["origin"]), str(other))
+    commit(other, "d.txt", "delta\n", "move master on")
+    git(other, "push", "-q", "origin", "master")
+    git(world["repo"], "fetch", "-q", "origin")
+    assert gitio.ahead_behind(repo, "origin/master") == (2, 1)
+
+
+def test_dirty_count(world: dict[str, Path]) -> None:
+    # The fixture leaves exactly one uncommitted edit.
+    assert gitio.dirty_count(str(world["repo"])) == 1
+    assert gitio.dirty_count(str(world["linked"])) == 0
+
+
+def test_summary_carries_branch_context(world: dict[str, Path]) -> None:
+    wt = next(w for w in gitio.discover(DiffwebConfig(roots=[str(world["repo"])])) if w.name == "proj")
+    s = gitio.summarise(wt, "origin/master")
+    assert (s.ahead, s.behind, s.dirty) == (2, 0, 1)
+
+
+def test_pr_lookup_without_gh_is_none(world: dict[str, Path], tmp_path: Path) -> None:
+    forge.clear_cache()
+    assert forge.pull_request(str(world["repo"]), "feature", gh_path=str(tmp_path / "no-gh")) is None
+
+
+def test_pr_lookup_skips_detached_head(world: dict[str, Path], fake_gh: Path) -> None:
+    forge.clear_cache()
+    assert forge.pull_request(str(world["repo"]), "detached @ abc123", gh_path=str(fake_gh)) is None
+
+
+def test_pr_lookup_parses_gh_output(world: dict[str, Path], fake_gh: Path) -> None:
+    forge.clear_cache()
+    pr = forge.pull_request(str(world["repo"]), "feature", gh_path=str(fake_gh))
+    assert pr is not None
+    assert (pr.number, pr.label, pr.status) == (42, "#42", "draft")
+    assert pr.url.endswith("/42")
+
+
+def test_pr_lookup_survives_a_broken_gh(world: dict[str, Path], tmp_path: Path) -> None:
+    broken = tmp_path / "gh-broken"
+    broken.write_text("#!/bin/sh\necho 'not json' \nexit 0\n")
+    broken.chmod(0o755)
+    forge.clear_cache()
+    assert forge.pull_request(str(world["repo"]), "feature", gh_path=str(broken)) is None
+
+
+def test_pr_lookup_is_cached(world: dict[str, Path], fake_gh: Path, tmp_path: Path) -> None:
+    counter = tmp_path / "gh-calls"
+    forge.clear_cache()
+    for _ in range(3):
+        forge.pull_request(str(world["repo"]), "feature", gh_path=str(fake_gh))
+    assert counter.read_text().count("x") == 1
+
+
+def test_catalog_renders_pr_chip(client: TestClient, config: DiffwebConfig, tmp_path: Path,
+                                 fake_gh: Path) -> None:
+    p = tmp_path / "diffweb.yaml"
+    data = yaml.safe_load(p.read_text())
+    data.setdefault("tools", {})["gh_path"] = str(fake_gh)
+    p.write_text(yaml.safe_dump(data))
+    from diffweb import app as app_module
+
+    app_module.reset_for_tests()
+    forge.clear_cache()
+    body = client.get("/").text
+    assert "#42" in body and "pr-draft" in body
+
+
+def test_pr_links_can_be_disabled(client: TestClient, config: DiffwebConfig, tmp_path: Path,
+                                  fake_gh: Path) -> None:
+    p = tmp_path / "diffweb.yaml"
+    data = yaml.safe_load(p.read_text())
+    data.setdefault("tools", {})["gh_path"] = str(fake_gh)
+    data["features"]["pr_links"] = False
+    p.write_text(yaml.safe_dump(data))
+    from diffweb import app as app_module
+
+    app_module.reset_for_tests()
+    forge.clear_cache()
+    assert "#42" not in client.get("/").text

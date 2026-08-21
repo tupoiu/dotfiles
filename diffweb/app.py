@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import hashlib
 import shutil
 from pathlib import Path
@@ -14,7 +15,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Str
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import gitio
+from . import forge, gitio
 from .config import DiffwebConfig, load_config
 from .gitio import WORKTREE, Worktree
 from .state import State
@@ -85,11 +86,30 @@ def _range(wt: Worktree, base: str, start: str | None, end: str | None) -> tuple
     return resolved_start, resolved_end
 
 
+def _attach_pull_requests(summaries: list[gitio.Summary], config: DiffwebConfig) -> None:
+    """Look PRs up in parallel; gh is slow enough that serial would be felt."""
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        futures = {
+            pool.submit(
+                forge.pull_request,
+                s.worktree.path,
+                s.worktree.branch,
+                config.tools.gh_path,
+                config.tools.gh_timeout_seconds,
+            ): s
+            for s in summaries
+        }
+        for future, summary in futures.items():
+            summary.pr = future.result()
+
+
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request, config: DiffwebConfig = Depends(get_config)) -> Any:
     state = get_state()
     worktrees = gitio.discover(config)
     summaries = gitio.summarise_all(worktrees, state.all_base_refs())
+    if config.features.pr_links:
+        _attach_pull_requests(summaries, config)
     for summary in summaries:
         # Cheap approximation: how many files we have ever ticked off here.
         # The exact per-range figure is computed on the diff page itself.
@@ -121,6 +141,11 @@ def worktree_page(
             "end": end or "",
             "features": config.features,
             "difft_available": bool(config.tools.difft_path or shutil.which("difft")),
+            "pr": forge.pull_request(
+                wt.path, wt.branch, config.tools.gh_path, config.tools.gh_timeout_seconds
+            )
+            if config.features.pr_links
+            else None,
         },
     )
 

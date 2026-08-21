@@ -26,6 +26,8 @@ class Features(BaseModel):
     structural: bool = False
     reviewed_state: bool = True
     live_reload: bool = True
+    # Shells out to `gh`, which hits the network; harmless but opt-out-able.
+    pr_links: bool = True
 
 
 class Limits(BaseModel):
@@ -37,6 +39,8 @@ class Limits(BaseModel):
 
 class Tools(BaseModel):
     difft_path: str | None = None
+    gh_path: str | None = None
+    gh_timeout_seconds: float = 5.0
 
 
 class DiffwebConfig(BaseModel):

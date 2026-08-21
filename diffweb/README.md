@@ -34,6 +34,7 @@ roots: ["~/code", "~/code.*", "~/worktrees/*/*"]   # globs; every match containi
 server: {host: 127.0.0.1, port: 8765}
 features:
   structural: false        # difftastic renderer toggle (see below)
+  pr_links: true           # look up each branch's PR with `gh`
   reviewed_state: true     # per-file reviewed checkboxes
   live_reload: true        # SSE push when the worktree changes
 limits:
@@ -41,6 +42,8 @@ limits:
   max_inline_files: 300
 tools:
   difft_path: null         # defaults to whatever `difft` is on PATH
+  gh_path: null            # defaults to whatever `gh` is on PATH
+  gh_timeout_seconds: 5.0
 state_db: "~/.local/state/diffweb/state.db"
 ```
 
@@ -74,6 +77,12 @@ $ cargo binstall difftastic
 Without it the toggle stays disabled and the endpoint returns that instruction
 rather than an error. The structural pane is dark in both colour schemes because
 difftastic's palette is tuned for a dark terminal.
+
+**Branch context.** Each row shows how far ahead of its base the branch is, a red
+`↓1` if it has fallen *behind* the base (your diff is against an old merge base),
+an amber dot when there are uncommitted files, and a chip linking to the branch's
+pull request. PRs come from `gh pr list --head <branch>`, cached for two minutes.
+Every failure mode - no `gh`, not logged in, offline, no PR - just means no chip.
 
 **Live reload.** The page opens an SSE stream; the server polls `HEAD` plus
 `git status --porcelain=v2` every two seconds and pushes a change event, and the

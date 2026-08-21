@@ -5,6 +5,7 @@
     <tr>
       <th data-sort="name">worktree</th>
       <th data-sort="branch">branch</th>
+      <th data-sort="pr">pr</th>
       <th data-sort="base">base</th>
       <th data-sort="ahead" class="num">ahead</th>
       <th data-sort="files" class="num">files</th>
@@ -18,16 +19,25 @@
     <tr onclick="location.href='/w/{{ s.worktree.id }}'"
         data-name="{{ s.worktree.name }}" data-branch="{{ s.worktree.branch }}"
         data-base="{{ s.base }}" data-ahead="{{ s.ahead }}" data-files="{{ s.files }}"
+        data-pr="{{ s.pr.number if s.pr else 0 }}"
         data-churn="{{ s.added + s.removed }}" data-reviewed="{{ s.reviewed }}"
         data-last="{{ s.last_commit }}">
       <td class="name"><a href="/w/{{ s.worktree.id }}">{{ s.worktree.name }}</a>
           <span class="path">{{ s.worktree.path }}</span></td>
-      <td class="branch">{{ s.worktree.branch }}</td>
+      <td class="branch">{{ s.worktree.branch }}
+        {%- if s.dirty %}<span class="dirty" title="{{ s.dirty }} uncommitted files">●</span>{% endif %}</td>
+      <td class="pr">
+        {%- if s.pr -%}
+        <a href="{{ s.pr.url }}" target="_blank" rel="noopener"
+           class="pr-chip pr-{{ s.pr.status }}" title="{{ s.pr.title }}"
+           onclick="event.stopPropagation()">{{ s.pr.label }}</a>
+        {%- else -%}<span class="dim">&mdash;</span>{%- endif -%}
+      </td>
       <td class="dim">{{ s.base }}</td>
       {% if s.error %}
         <td class="err" colspan="5">{{ s.error }}</td>
       {% else %}
-        <td class="num">{{ s.ahead }}</td>
+        <td class="num">{{ s.ahead }}{% if s.behind %}<span class="behind" title="{{ s.behind }} commits behind {{ s.base }}">&darr;{{ s.behind }}</span>{% endif %}</td>
         <td class="num">{{ s.files }}</td>
         <td class="num churn"><span class="add">+{{ s.added }}</span> <span class="del">&minus;{{ s.removed }}</span></td>
         <td class="num dim">{{ s.reviewed or "&mdash;" | safe }}</td>
@@ -35,7 +45,7 @@
       {% endif %}
     </tr>
   {% else %}
-    <tr><td colspan="8" class="empty">No worktrees found. Check <code>roots</code> in your diffweb.yaml.</td></tr>
+    <tr><td colspan="9" class="empty">No worktrees found. Check <code>roots</code> in your diffweb.yaml.</td></tr>
   {% endfor %}
   </tbody>
 </table>

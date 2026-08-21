@@ -7,7 +7,9 @@
      data-start="{{ start }}"
      data-end="{{ end }}"
      data-live="{{ 1 if features.live_reload else 0 }}">
-  <span class="wt-name">{{ wt.name }} <span class="branch">{{ wt.branch }}</span></span>
+  <span class="wt-name">{{ wt.name }} <span class="branch">{{ wt.branch }}</span>
+    {%- if pr %}<a href="{{ pr.url }}" target="_blank" rel="noopener"
+       class="pr-chip pr-{{ pr.status }}" title="{{ pr.title }}">{{ pr.label }}</a>{% endif %}</span>
   <label>base <input id="base" value="{{ base }}" size="16" spellcheck="false"></label>
   <label>from <select id="start"></select></label>
   <label>to <select id="end"></select></label>
