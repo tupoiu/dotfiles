@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}profiles &middot; diffweb{% endblock %}
+{% block toolbar %}
+<div class="controls">
+  <span class="wt-name">profiles</span>
+  <span class="status">{{ aggregates.count }} recent &middot;
+    median {{ "%.0f"|format(aggregates.median_ms) }} ms &middot;
+    p95 {{ "%.0f"|format(aggregates.p95_ms) }} ms</span>
+</div>
+{% endblock %}
+{% block content %}
+<table class="catalog">
+  <thead>
+    <tr>
+      <th>when</th>
+      <th>worktree</th>
+      <th>branch</th>
+      <th class="num">files</th>
+      <th class="num">diff</th>
+      <th class="num">total</th>
+      <th class="num">server</th>
+      <th class="num">fetch</th>
+      <th class="num">render</th>
+      <th class="stage-col">stages</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for r in records %}
+    <tr>
+      <td class="dim"><time datetime="{{ r.at }}" class="ago" data-at="{{ r.at }}"></time></td>
+      <td class="name">{{ r.worktree }}</td>
+      <td class="dim">{{ r.branch }}</td>
+      <td class="num">{{ r.files_count }}</td>
+      <td class="num dim">{{ (r.diff_bytes / 1024) | round | int }} KiB</td>
+      <td class="num"><strong>{{ "%.0f"|format(r.total_ms) }}</strong></td>
+      <td class="num dim">{{ "%.0f"|format(r.server_ms) }}</td>
+      <td class="num dim">{{ "%.0f"|format(r.fetch_ms) }}</td>
+      <td class="num dim">{{ "%.0f"|format(r.render_ms) }}</td>
+      <td>
+        <div class="stagebar">
+          {% for seg in r.segments %}
+          <span class="seg seg-{{ seg.name }}" style="width: {{ "%.2f"|format(seg.pct) }}%"
+                title="{{ seg.name }} {{ "%.1f"|format(seg.ms) }} ms"></span>
+          {% endfor %}
+        </div>
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="10" class="empty">No profiles yet. Open a worktree diff and come back.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p class="summary legend">
+  {% for name in ["refs", "numstat", "shas", "diff", "serialise", "network", "render"] %}
+  <span class="key"><span class="seg seg-{{ name }}"></span>{{ name }}</span>
+  {% endfor %}
+  &middot; <code>{{ log_path }}</code>
+</p>
+{% endblock %}
+{% block scripts %}<script src="/static/profiles.js"></script>{% endblock %}

@@ -149,8 +149,10 @@ async function render() {
   if ($end.value) q.end = $end.value;
   if ($structural?.checked) q.renderer = "structural";
 
+  const fetchStart = performance.now();
   const r = await fetch(api("diff", q));
   const data = await r.json();
+  const fetchMs = performance.now() - fetchStart;
   if (!r.ok || data.error) { $diff.innerHTML = ""; $summary.innerHTML = `<span class="warn">${data.error}</span>`; status(""); return; }
 
   currentReview = data.review || {};
@@ -167,20 +169,29 @@ async function render() {
     ` · ${reviewed}/${files.length} reviewed` +
     (changed ? ` · <span class="warn">${changed} changed since you reviewed</span>` : "");
 
+  const renderStart = performance.now();
   if (data.renderer === "structural") {
     $diff.innerHTML = `<pre class="difft">${data.html}</pre>`;
-    status("");
-    return;
-  }
-  if (data.lazy) {
+  } else if (data.lazy) {
     $diff.innerHTML = "";
     $summary.innerHTML += ` · <span class="warn">diff is large — loading per file</span>`;
     await renderLazy(files, q);
-    status("");
-    return;
+  } else {
+    draw(data.diff);
   }
-  draw(data.diff);
   status("");
+  reportProfile(data.profile_id, fetchMs, performance.now() - renderStart);
+}
+
+// The server can time its own work but not the two stages the user waits
+// longest for, so the page posts them back and the profile is the whole journey.
+function reportProfile(profileId, fetchMs, renderMs) {
+  if (!profileId) return;
+  const body = JSON.stringify({ profile_id: profileId, fetch_ms: fetchMs, render_ms: renderMs });
+  // keepalive: the report must survive the user navigating straight back out.
+  fetch("/api/profile", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body, keepalive: true,
+  }).catch(() => { /* profiling is never worth breaking the page over */ });
 }
 
 function draw(diffText, target) {

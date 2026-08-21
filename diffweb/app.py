@@ -5,17 +5,25 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import hashlib
+import json
 import shutil
+import time
 from pathlib import Path
 from typing import Any
 
 from ansi2html import Ansi2HTMLConverter
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import (
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    Response,
+    StreamingResponse,
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import forge, gitio
+from . import forge, gitio, profiling
 from .config import DiffwebConfig, load_config
 from .gitio import WORKTREE, Worktree
 from .state import State
@@ -35,6 +43,7 @@ templates = Jinja2Templates(directory=str(HERE / "templates"))
 
 _config: DiffwebConfig | None = None
 _state: State | None = None
+_pending_profiles = profiling.Pending()
 
 
 def get_config() -> DiffwebConfig:
@@ -56,6 +65,7 @@ def reset_for_tests() -> None:
     global _config, _state
     _config = _state = None
     _diff_cache.clear()
+    _pending_profiles.clear()
 
 
 def find_worktree(wt_id: str, config: DiffwebConfig) -> Worktree:
@@ -178,14 +188,21 @@ def api_diff(
 ) -> Any:
     wt = find_worktree(wt_id, config)
     state = get_state()
-    base = base or state.base_ref(wt_id) or gitio.default_base(wt.path)
-    s, e = _range(wt, base, start, end)
+    # Per-file lazy loads are follow-up requests, not the wait we are measuring.
+    timer = profiling.Timer(enabled=config.features.profiling and not files)
 
-    stats = gitio.numstat(wt.path, s, e)
-    for row in stats:
-        row["noisy"] = gitio.is_noisy(str(row["path"]), config.noise.collapse_by_default)
-    shas = gitio.blob_shas(wt.path, s, e)
-    review = state.review_status(wt_id, shas) if config.features.reviewed_state else {}
+    with timer.stage("refs"):
+        base = base or state.base_ref(wt_id) or gitio.default_base(wt.path)
+        s, e = _range(wt, base, start, end)
+
+    with timer.stage("numstat"):
+        stats = gitio.numstat(wt.path, s, e)
+        for row in stats:
+            row["noisy"] = gitio.is_noisy(str(row["path"]), config.noise.collapse_by_default)
+
+    with timer.stage("shas"):
+        shas = gitio.blob_shas(wt.path, s, e)
+        review = state.review_status(wt_id, shas) if config.features.reviewed_state else {}
 
     if renderer == "structural":
         if not config.features.structural:
@@ -199,9 +216,14 @@ def api_diff(
         html = Ansi2HTMLConverter(inline=True, dark_bg=True).convert(ansi, full=False)
         return {"renderer": "structural", "html": html, "files": stats, "review": review, "shas": shas}
 
-    size = gitio.diff_size_bytes(wt.path, s, e) if not files else 0
-    lazy = not files and (size > config.limits.max_inline_diff_bytes or len(stats) > config.limits.max_inline_files)
-    return {
+    with timer.stage("diff"):
+        size = gitio.diff_size_bytes(wt.path, s, e) if not files else 0
+        lazy = not files and (
+            size > config.limits.max_inline_diff_bytes or len(stats) > config.limits.max_inline_files
+        )
+        diff = "" if lazy else cached_diff(wt.path, s, e) if not files else gitio.diff_text(wt.path, s, e, files)
+
+    payload = {
         "renderer": "line",
         "start": s,
         "end": e,
@@ -210,8 +232,68 @@ def api_diff(
         "review": review,
         "shas": shas,
         "lazy": lazy,
-        "diff": "" if lazy else cached_diff(wt.path, s, e) if not files else gitio.diff_text(wt.path, s, e, files),
+        "diff": diff,
     }
+    if not timer.enabled:
+        return payload
+
+    # Serialising is a real cost centre on a big diff, so hand back an already
+    # encoded body rather than letting FastAPI re-encode it unmeasured.
+    key = profiling.Pending.new_key()
+    payload["profile_id"] = key
+    with timer.stage("serialise"):
+        body = json.dumps(payload).encode()
+    _pending_profiles.add(
+        key,
+        {
+            "worktree": wt.name,
+            "branch": wt.branch,
+            "files_count": len(stats),
+            "diff_bytes": len(diff.encode()),
+            "response_bytes": len(body),
+            "stages": {k: round(v, 2) for k, v in timer.stages.items()},
+            "server_ms": round(timer.total_ms, 2),
+        },
+    )
+    return Response(content=body, media_type="application/json")
+
+
+@app.post("/api/profile")
+async def api_profile(request: Request, config: DiffwebConfig = Depends(get_config)) -> Any:
+    """The page reporting the half of the wait only it can see."""
+    if not config.features.profiling:
+        raise HTTPException(404, "profiling is disabled in config")
+    sent = await request.json()
+    record = _pending_profiles.take(str(sent.get("profile_id", "")))
+    if record is None:
+        # Stale id: the server was restarted, or the entry aged out.
+        return {"ok": False}
+    fetch_ms = float(sent.get("fetch_ms") or 0)
+    render_ms = float(sent.get("render_ms") or 0)
+    record |= {
+        "at": time.time(),
+        "fetch_ms": round(fetch_ms, 2),
+        "render_ms": round(render_ms, 2),
+        "total_ms": round(fetch_ms + render_ms, 2),
+    }
+    profiling.append(config.profile_log_path(), record, config.profile_keep)
+    return {"ok": True}
+
+
+@app.get("/profiles", response_class=HTMLResponse)
+def profiles_page(request: Request, config: DiffwebConfig = Depends(get_config)) -> Any:
+    if not config.features.profiling:
+        raise HTTPException(404, "profiling is disabled in config")
+    records = profiling.read(config.profile_log_path())
+    return templates.TemplateResponse(
+        request,
+        "profiles.html",
+        {
+            "records": [r | {"segments": profiling.segments(r)} for r in records],
+            "aggregates": profiling.aggregates(records),
+            "log_path": str(config.profile_log_path()),
+        },
+    )
 
 
 @app.post("/api/w/{wt_id}/pr/refresh")

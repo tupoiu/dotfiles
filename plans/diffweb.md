@@ -28,6 +28,7 @@ See `diffweb/README.md` for how to run it and `diffweb/ROADMAP.md` for ideas.
 - [x] Noise control — auto-collapse generated files, per-file churn, hide-reviewed (`diffweb/gitio.py:181`) — Cargo.lock and uv.lock start collapsed; reopening one sticks across reloads
 - [x] Merge the three onto `diffweb-integrated` and serve it — 72 tests pass, all three features verified working together on :8765
 - [x] PR chips carry an age — `#4312 18w` when a PR exists, `No PR (🔄 2d)` otherwise, with the 🔄 forcing a re-check — lookups persisted in SQLite so the age survives a restart; 94 tests pass and the refresh control was driven in a browser
+- [x] Profile the diff-to-HTML path — server stage timings plus client fetch/render posted back, appended to a JSONL log and shown at `/profiles` (`diffweb/profiling.py`, `diffweb/app.py:178`) — 110 tests pass; `/profiles` screenshotted in both colour schemes on :8766
 - [ ] Open-in-editor links — deliberately deferred, see ROADMAP
 - [ ] code-server + GitLens comparison — never spiked, nothing was running on this VM
 
@@ -95,6 +96,18 @@ See `diffweb/README.md` for how to run it and `diffweb/ROADMAP.md` for ideas.
   inline SVG. Only looking at a screenshot caught this - every test passed.
 - **The tool now finds its own worktrees**, because `~/worktrees/*/*` matches
   `~/worktrees/dotfiles/*`. Unplanned, and the best dogfooding available.
+
+- **The server's half of the wait is not the interesting half.** On the 9-file
+  kasli branch the whole journey is ~230ms: ~120ms server (of which `git diff`
+  ~50ms, blob shas ~38ms, numstat ~22ms — JSON serialisation is 0.1ms and not
+  worth optimising), and ~95ms of diff2html rendering in the browser. Any future
+  speed work belongs in the three git calls and in the renderer, not in Python.
+- **A profile only exists once the page reports back**, so the server parks its
+  half in a bounded in-memory dict keyed by an id it returns in the diff body.
+  A page closed mid-load simply never posts and the entry ages out.
+- **Timing serialisation means owning it**: the endpoint json.dumps the payload
+  itself and returns a `Response`, because anything FastAPI encodes after the
+  handler returns is invisible to a handler-scoped timer.
 
 ## Verify
 

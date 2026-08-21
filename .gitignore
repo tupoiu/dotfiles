@@ -14,3 +14,6 @@ wheels/
 # diffweb vendored browser libs (poe fetch-diffweb-assets)
 diffweb/static/vendor/*
 !diffweb/static/vendor/.gitkeep
+
+# diffweb profile log, if it is configured inside the repo
+profiles.jsonl

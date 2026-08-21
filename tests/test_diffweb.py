@@ -19,7 +19,7 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
-from diffweb import forge, gitio
+from diffweb import forge, gitio, profiling
 from diffweb.config import DiffwebConfig, Noise, load_config
 from diffweb.gitio import WORKTREE
 from diffweb.state import State
@@ -81,6 +81,7 @@ def config(world: dict[str, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPat
             {
                 "roots": [f"{world['root']}/proj", f"{world['root']}/proj.*"],
                 "state_db": str(tmp_path / "state.db"),
+                "profile_log": str(tmp_path / "profiles.jsonl"),
                 "features": {"structural": False, "reviewed_state": True, "live_reload": True},
             }
         )
@@ -721,3 +722,128 @@ def test_stale_check_reports_a_growing_age(
     wid = wt_id(config, "proj")
     state.save_pr(wid, "feature", None, time.time() - 2 * 86400)
     assert '<span class="pr-checked">2d</span>' in client.get("/").text
+
+
+def test_diff_response_carries_a_profile_id(client: TestClient, config: DiffwebConfig) -> None:
+    body = client.get(f"/api/w/{wt_id(config, 'proj')}/diff").json()
+    assert len(body["profile_id"]) == 32
+
+
+def test_profile_is_written_only_once_the_page_reports_back(
+    client: TestClient, config: DiffwebConfig, tmp_path: Path
+) -> None:
+    log = config.profile_log_path()
+    profile_id = client.get(f"/api/w/{wt_id(config, 'proj')}/diff").json()["profile_id"]
+    assert not log.exists(), "the server half alone is not a profile"
+
+    r = client.post("/api/profile", json={"profile_id": profile_id, "fetch_ms": 12.5, "render_ms": 30})
+    assert r.json() == {"ok": True}
+
+    (record,) = profiling.read(log)
+    assert record["worktree"] == "proj"
+    assert record["branch"] == "feature"
+    assert record["files_count"] >= 1
+    assert record["diff_bytes"] > 0
+    assert record["total_ms"] == 42.5
+    assert set(record["stages"]) == set(profiling.SERVER_STAGES)
+    assert all(ms >= 0 for ms in record["stages"].values())
+
+
+def test_profile_report_with_an_unknown_id_is_ignored(client: TestClient, config: DiffwebConfig) -> None:
+    r = client.post("/api/profile", json={"profile_id": "nope", "fetch_ms": 1, "render_ms": 1})
+    assert r.json() == {"ok": False}
+    assert not config.profile_log_path().exists()
+
+
+def test_profiles_page_lists_recent_profiles_newest_first(
+    client: TestClient, config: DiffwebConfig
+) -> None:
+    for render_ms in (10, 20):
+        profile_id = client.get(f"/api/w/{wt_id(config, 'proj')}/diff").json()["profile_id"]
+        client.post("/api/profile", json={"profile_id": profile_id, "fetch_ms": 5, "render_ms": render_ms})
+
+    html = client.get("/profiles").text
+    assert html.index("25</strong>") < html.index("15</strong>")
+    assert "2 recent" in html
+    assert "stagebar" in html
+
+
+def test_profiles_page_is_empty_without_profiles(client: TestClient, config: DiffwebConfig) -> None:
+    assert "No profiles yet" in client.get("/profiles").text
+
+
+def test_catalog_links_to_profiles(client: TestClient, config: DiffwebConfig) -> None:
+    assert '/profiles"' in client.get("/").text
+
+
+def test_profiling_can_be_disabled(
+    world: dict[str, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg_path = tmp_path / "off.yaml"
+    cfg_path.write_text(
+        yaml.safe_dump(
+            {
+                "roots": [f"{world['root']}/proj"],
+                "state_db": str(tmp_path / "state.db"),
+                "profile_log": str(tmp_path / "profiles.jsonl"),
+                "features": {"profiling": False, "pr_links": False},
+            }
+        )
+    )
+    monkeypatch.setenv("DIFFWEB_CONFIG", str(cfg_path))
+    from diffweb import app as app_module
+
+    app_module.reset_for_tests()
+    with TestClient(app_module.app) as c:
+        assert "profile_id" not in c.get(f"/api/w/{wt_id(load_config(), 'proj')}/diff").json()
+        assert c.get("/profiles").status_code == 404
+        assert c.post("/api/profile", json={}).status_code == 404
+        assert "/profiles" not in c.get("/").text
+    app_module.reset_for_tests()
+
+
+def test_disabled_timer_records_nothing() -> None:
+    timer = profiling.Timer(enabled=False)
+    with timer.stage("refs"):
+        pass
+    assert timer.stages == {} and timer.total_ms == 0
+
+
+def test_profile_log_is_capped(tmp_path: Path) -> None:
+    log = tmp_path / "profiles.jsonl"
+    for i in range(12):
+        profiling.append(log, {"total_ms": i}, keep=5)
+    assert [r["total_ms"] for r in profiling.read(log)] == [11, 10, 9, 8, 7]
+
+
+def test_profile_log_skips_a_corrupt_line(tmp_path: Path) -> None:
+    log = tmp_path / "profiles.jsonl"
+    profiling.append(log, {"total_ms": 1})
+    log.write_text(log.read_text() + "{ not json\n")
+    assert [r["total_ms"] for r in profiling.read(log)] == [1]
+
+
+@pytest.mark.parametrize(
+    ("values", "q", "expected"),
+    [([], 0.5, 0), ([7], 0.95, 7), ([1, 2, 3], 0.5, 2), ([1, 2, 3, 4, 100], 0.95, 100)],
+)
+def test_quantile(values: list[float], q: float, expected: float) -> None:
+    assert profiling.quantile(values, q) == expected
+
+
+def test_segments_cover_the_whole_wait() -> None:
+    record = {
+        "stages": {"refs": 1, "numstat": 2, "shas": 1, "diff": 6, "serialise": 0},
+        "fetch_ms": 20,
+        "render_ms": 30,
+        "total_ms": 50,
+    }
+    segs = profiling.segments(record)
+    assert [s["name"] for s in segs] == ["refs", "numstat", "shas", "diff", "network", "render"]
+    # network is the fetch time the server did not account for.
+    assert dict((s["name"], s["ms"]) for s in segs)["network"] == 10
+    assert round(sum(s["pct"] for s in segs)) == 100
+
+
+def test_segments_of_an_untimed_record_are_empty() -> None:
+    assert profiling.segments({"total_ms": 0}) == []
