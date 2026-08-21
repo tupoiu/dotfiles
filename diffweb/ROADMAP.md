@@ -14,6 +14,33 @@ Scratchpad. Add anything, however half-formed - nothing here is committed to.
 - ~~Make the "chips" column in the homepage also show when the PR was first made if
   it exists, or if theres "No PR ({refresh emoji} 1m)" or "No PR ({refresh} 2d)".~~
   Done - the 🔄 is clickable and re-asks gh.
+- Show which Claude agents have edited files on a worktree, on the homepage.
+  Derisked by reading `~/.claude/projects/*/*.jsonl` (2026-08-21):
+  - **Feasible.** Every record carries `cwd`, `gitBranch`, `sessionId` and a
+    timestamp, and `Edit`/`Write`/`NotebookEdit` tool_use blocks carry
+    `file_path`. Match on the recorded `cwd`, *not* on the project directory
+    name - that slug maps both `/` and `.` to `-`, so
+    `code.sqt-234-x` and `code/sqt-234/x` collide.
+  - Agents are identifiable: `sessionId` per session, an `ai-title` record
+    giving it a human name, and `message.model` (`claude-opus-5`,
+    `claude-fable-5`) per turn. `isSidechain` exists for subagents but is False
+    throughout this machine's history, so subagent attribution is untested.
+  - **The accuracy risk, and it is large.** Only edits made through the edit
+    tools are attributable. Across this machine there are ~107 `Edit`/`Write`
+    calls against ~241 Bash commands that look like they wrote a file
+    (`sed -i`, heredocs, `>` redirects). Any agent that edits via Bash - which
+    is the norm under some harness settings - is invisible. So the feature can
+    honestly say "these agents touched these files", never "this file was
+    changed by an agent" or "nothing else touched it".
+  - Cost and privacy: transcripts are megabytes of JSONL holding prompts and
+    source, living outside the repo. Parse lazily, cache by file mtime, and
+    surface only paths, session names and timestamps - never message content.
+
+- Profile the diff-to-HTML path: the wall-clock a user waits between opening a
+  worktree and seeing the diff of a heavy branch, broken down by stage, with a
+  small page that shows recent profiles. Profiles are local noise - gitignore
+  them.
+
 - Refactoring cleanup: `app.py` is doing route handling, caching and PR fan-out at
   once, `worktree.js` has grown to several hundred lines of globals, and the
   gitio/app boundary leaks (`app.py` reaches for `gitio._try_git`). Split the
