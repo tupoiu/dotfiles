@@ -1,0 +1,128 @@
+:root {
+  --bg: #ffffff; --fg: #1b1f24; --dim: #6a737d; --line: #e3e6ea;
+  --accent: #2f6feb; --add: #1a7f37; --del: #cf222e; --panel: #f6f8fa;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116; --fg: #d7dde5; --dim: #8b949e; --line: #262c36;
+    --accent: #6ea8ff; --add: #3fb950; --del: #f85149; --panel: #161b22;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 13px/1.5 ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+
+.topbar {
+  position: sticky; top: 0; z-index: 20; display: flex; align-items: center;
+  gap: 16px; flex-wrap: wrap; padding: 8px 16px;
+  background: var(--panel); border-bottom: 1px solid var(--line);
+}
+.brand { font-weight: 650; letter-spacing: .02em; color: var(--fg); }
+main { padding: 16px; }
+
+.controls { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.controls label { color: var(--dim); display: flex; align-items: center; gap: 5px; }
+.controls .chk { cursor: pointer; }
+.wt-name { font-weight: 600; }
+.branch {
+  font-family: ui-monospace, monospace; font-size: 11px; color: var(--dim);
+  border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; margin-left: 6px;
+}
+input, select {
+  background: var(--bg); color: var(--fg); border: 1px solid var(--line);
+  border-radius: 6px; padding: 3px 6px; font: inherit; max-width: 420px;
+}
+.status { color: var(--dim); font-size: 12px; }
+.status.busy::before { content: "\25CF "; color: var(--accent); }
+
+.catalog { width: 100%; border-collapse: collapse; }
+.catalog th {
+  text-align: left; font-weight: 550; color: var(--dim); font-size: 11px;
+  text-transform: uppercase; letter-spacing: .06em; padding: 6px 10px;
+  border-bottom: 1px solid var(--line); cursor: pointer; user-select: none;
+}
+.catalog td { padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: baseline; }
+.catalog tbody tr { cursor: pointer; }
+.catalog tbody tr:hover { background: var(--panel); }
+.catalog .num { text-align: right; font-variant-numeric: tabular-nums; }
+.catalog .name a { font-weight: 550; }
+.catalog .path { display: block; color: var(--dim); font-size: 11px; }
+.catalog .dim { color: var(--dim); }
+.catalog .err { color: var(--del); }
+.catalog .empty { color: var(--dim); text-align: center; padding: 32px; }
+.add { color: var(--add); }
+.del { color: var(--del); }
+
+.summary { color: var(--dim); margin-bottom: 12px; }
+.summary .warn { color: var(--del); }
+/* difftastic's palette is tuned for a dark terminal, and the ANSI colours are
+   baked in as inline styles, so this block stays dark in both themes. */
+.difft { overflow-x: auto; background: #0e1116; color: #d7dde5; padding: 12px;
+         border-radius: 8px; font: 12px/1.45 ui-monospace, monospace; }
+
+/* Collapsing and review state, layered on diff2html's own file wrappers.
+   Side-by-side uses .d2h-files-diff, line-by-line uses .d2h-file-diff. */
+.d2h-file-wrapper.collapsed .d2h-file-diff,
+.d2h-file-wrapper.collapsed .d2h-files-diff { display: none; }
+.d2h-file-header { cursor: pointer; }
+.d2h-file-wrapper:has(.review-tick input:checked) .d2h-file-header { opacity: .6; }
+
+.chevron {
+  flex: none; width: 16px; height: 16px; margin-right: 2px; padding: 0;
+  border: 0; background: none; cursor: pointer; color: var(--dim);
+}
+.chevron::before {
+  content: ""; display: block; width: 5px; height: 5px; margin: 4px 0 0 3px;
+  border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg); transition: transform .12s ease;
+}
+.d2h-file-wrapper.collapsed .chevron::before { transform: rotate(-45deg); margin-top: 6px; }
+
+.review-tick { margin-left: auto; display: flex; align-items: center; gap: 5px;
+               color: var(--dim); font-size: 11px; cursor: pointer; }
+.badge-changed { color: var(--del); font-size: 11px; margin-left: 8px; }
+
+/* diff2html ships a light-only stylesheet, so recolour it for dark mode.
+   Selectors mirror the ones in vendor/diff2html.min.css. */
+@media (prefers-color-scheme: dark) {
+  .d2h-wrapper, .d2h-file-wrapper, .d2h-files-diff, .d2h-file-side-diff,
+  .d2h-code-wrapper, .d2h-diff-table { background: var(--bg); color: var(--fg); }
+  .d2h-file-wrapper, .d2h-file-list-wrapper, .d2h-file-header,
+  .d2h-code-linenumber, .d2h-code-side-linenumber, .d2h-diff-tbody > tr > td {
+    border-color: var(--line);
+  }
+  .d2h-file-header, .d2h-file-list-header, .d2h-file-list-wrapper { background: var(--panel); }
+  .d2h-file-name, .d2h-file-list-title, .d2h-file-list a { color: var(--fg); }
+  .d2h-code-line-ctn, .d2h-code-line, .d2h-code-side-line { color: var(--fg); }
+  .d2h-code-linenumber, .d2h-code-side-linenumber { background: var(--panel); color: var(--dim); }
+
+  .d2h-ins { background: #12261e; border-color: #1d3b2a; }
+  .d2h-ins.d2h-change { background: #14231c; }
+  .d2h-del { background: #2a1618; border-color: #48232a; }
+  .d2h-del.d2h-change { background: #23181a; }
+  .d2h-info { background: var(--panel); color: var(--dim); border-color: var(--line); }
+  .d2h-ins ins, .d2h-ins ins.d2h-change { background: #1f5c3a; color: #d7ffe6; }
+  .d2h-del del, .d2h-del del.d2h-change { background: #6e2b31; color: #ffe3e3; }
+  .d2h-emptyplaceholder, .d2h-cntx { background: var(--bg); border-color: var(--line); }
+  .d2h-code-line del, .d2h-code-side-line del { background: #6e2b31; }
+  .d2h-code-line ins, .d2h-code-side-line ins { background: #1f5c3a; }
+  .d2h-tag { background: var(--panel); }
+  .d2h-changed-tag { border-color: #9e6a03; color: #d29922; }
+  .d2h-added-tag { border-color: #1d3b2a; color: var(--add); }
+  .d2h-deleted-tag { border-color: #48232a; color: var(--del); }
+  .d2h-moved-tag { border-color: var(--line); color: var(--accent); }
+}
+
+/* Our own table must not inherit diff2html's generic table borders. */
+.catalog, .catalog tr, .catalog td, .catalog th { border-left: 0; border-right: 0; }
+
+.linkish {
+  background: none; border: 0; padding: 0; font: inherit;
+  color: var(--accent); cursor: pointer;
+}
+.linkish:hover { text-decoration: underline; }

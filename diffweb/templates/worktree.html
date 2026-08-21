@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}{{ wt.name }} &middot; diffweb{% endblock %}
+{% block toolbar %}
+<div class="controls"
+     data-wt="{{ wt.id }}"
+     data-base="{{ base }}"
+     data-start="{{ start }}"
+     data-end="{{ end }}"
+     data-live="{{ 1 if features.live_reload else 0 }}">
+  <span class="wt-name">{{ wt.name }} <span class="branch">{{ wt.branch }}</span></span>
+  <label>base <input id="base" value="{{ base }}" size="16" spellcheck="false"></label>
+  <label>from <select id="start"></select></label>
+  <label>to <select id="end"></select></label>
+  <label class="chk"><input type="checkbox" id="sbs"> side&#8209;by&#8209;side</label>
+  {% if features.structural %}
+  <label class="chk"><input type="checkbox" id="structural" {% if not difft_available %}disabled{% endif %}>
+    structural</label>
+  {% endif %}
+  <button type="button" id="toggle-all" class="linkish">collapse all</button>
+  <span id="status" class="status"></span>
+</div>
+{% endblock %}
+{% block content %}
+<div id="summary" class="summary"></div>
+<div id="diff"></div>
+{% endblock %}
+{% block scripts %}
+<script src="/static/vendor/diff2html-ui.min.js"></script>
+<script src="/static/worktree.js"></script>
+{% endblock %}

@@ -10,14 +10,33 @@ dependencies = []
 dev = [
   "pytest",
   "pytest-xdist>=3.8.0",
+  "httpx",  # FastAPI TestClient
+]
+# diffweb: everything it needs is project-scoped, so `uv sync` is the whole install.
+diffweb = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "jinja2>=3.1",
+  "pydantic>=2.7",
+  "pyyaml>=6",
+  "ansi2html>=1.9",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-n 6"
+pythonpath = ["."]  # the repo is not an installed package; diffweb is imported from the tree
 
 [tool.poe.tasks]
 # We use cgroupfs because WSL doesn't work normally with cgroups
 build-claude = "podman build --cgroup-manager=cgroupfs -t claude-default claude-docker"
 build-playwright = "podman build --cgroup-manager=cgroupfs -t playwright-default --build-arg BASE_IMAGE=localhost/claude-default:latest playwright-docker"
 test-claude = {cmd = "pytest tests/", executor = "uv" }
+
+# diffweb - local web UI for reviewing diffs across git worktrees. See diffweb/README.md
+diffweb = {cmd = "python -m diffweb", executor = "uv" }
+diffweb-dev = {cmd = "python -m diffweb --reload", executor = "uv" }
+fetch-diffweb-assets = "bash diffweb/fetch-assets.sh"
+
+[tool.uv]
+default-groups = ["dev", "diffweb"]

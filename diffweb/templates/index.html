@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+<table class="catalog" id="catalog">
+  <thead>
+    <tr>
+      <th data-sort="name">worktree</th>
+      <th data-sort="branch">branch</th>
+      <th data-sort="base">base</th>
+      <th data-sort="ahead" class="num">ahead</th>
+      <th data-sort="files" class="num">files</th>
+      <th data-sort="churn" class="num">+/&minus;</th>
+      <th data-sort="reviewed" class="num">reviewed</th>
+      <th data-sort="last">last commit</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for s in summaries %}
+    <tr onclick="location.href='/w/{{ s.worktree.id }}'"
+        data-name="{{ s.worktree.name }}" data-branch="{{ s.worktree.branch }}"
+        data-base="{{ s.base }}" data-ahead="{{ s.ahead }}" data-files="{{ s.files }}"
+        data-churn="{{ s.added + s.removed }}" data-reviewed="{{ s.reviewed }}"
+        data-last="{{ s.last_commit }}">
+      <td class="name"><a href="/w/{{ s.worktree.id }}">{{ s.worktree.name }}</a>
+          <span class="path">{{ s.worktree.path }}</span></td>
+      <td class="branch">{{ s.worktree.branch }}</td>
+      <td class="dim">{{ s.base }}</td>
+      {% if s.error %}
+        <td class="err" colspan="5">{{ s.error }}</td>
+      {% else %}
+        <td class="num">{{ s.ahead }}</td>
+        <td class="num">{{ s.files }}</td>
+        <td class="num churn"><span class="add">+{{ s.added }}</span> <span class="del">&minus;{{ s.removed }}</span></td>
+        <td class="num dim">{{ s.reviewed or "&mdash;" | safe }}</td>
+        <td class="dim">{{ s.last_commit }}</td>
+      {% endif %}
+    </tr>
+  {% else %}
+    <tr><td colspan="8" class="empty">No worktrees found. Check <code>roots</code> in your diffweb.yaml.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
+{% block scripts %}<script src="/static/catalog.js"></script>{% endblock %}
