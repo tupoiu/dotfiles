@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import concurrent.futures
+import fnmatch
 import glob
 import hashlib
 import os
@@ -175,6 +176,22 @@ def diff_text(path: str, start: str, end: str, files: list[str] | None = None) -
     if files:
         args += ["--", *files]
     return _try_git(path, *args) or ""
+
+
+def is_noisy(path: str, patterns: list[str]) -> bool:
+    """Lockfiles, generated code and snapshots: changed, but rarely read.
+
+    `**/x` should also match a top-level `x`, which fnmatch does not do on its
+    own, so that prefix is tried both ways.
+    """
+    candidates = {path}
+    for pattern in patterns:
+        variants = {pattern}
+        if pattern.startswith("**/"):
+            variants.add(pattern[3:])
+        if any(fnmatch.fnmatch(c, v) for c in candidates for v in variants):
+            return True
+    return False
 
 
 def numstat(path: str, start: str, end: str) -> list[dict[str, object]]:

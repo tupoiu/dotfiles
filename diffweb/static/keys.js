@@ -20,7 +20,11 @@
   let cursor = -1;
 
   function refresh() {
-    files = [...document.querySelectorAll("#diff .d2h-file-wrapper")];
+    // "hide reviewed" takes files out of the page; navigation must not land on
+    // one, so only what is actually on screen counts.
+    files = [...document.querySelectorAll("#diff .d2h-file-wrapper")].filter(
+      (f) => f.offsetParent !== null,
+    );
     if (cursor >= files.length) cursor = files.length - 1;
     paint();
   }
@@ -57,7 +61,13 @@
     if (cursor === -1) cursor = nearestVisible();
     const file = files[cursor];
     if (name === "toggle") file.querySelector(".d2h-file-header").click();
-    if (name === "review") file.querySelector(".review-tick input")?.click();
+    if (name === "review") {
+      file.querySelector(".review-tick input")?.click();
+      // The file may have just been filtered away underneath the cursor.
+      const wasAt = cursor;
+      refresh();
+      if (!files.includes(file)) cursor = Math.min(wasAt, files.length - 1);
+    }
     paint();
   }
 

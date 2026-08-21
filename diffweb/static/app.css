@@ -173,3 +173,13 @@ input, select {
   border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: var(--panel);
 }
 #key-help p { margin: 14px 0 0; font-size: 11px; }
+/* Noise control: per-file churn, generated-file badge, hide-reviewed filter. */
+.file-stats {
+  margin-left: 10px; font-size: 11px;
+  font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums;
+}
+.noise-tag {
+  margin-left: 8px; font-size: 10px; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--dim); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px;
+}
+body.hide-reviewed .d2h-file-wrapper.is-reviewed { display: none; }

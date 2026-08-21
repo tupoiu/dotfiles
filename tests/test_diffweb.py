@@ -18,6 +18,8 @@ from fastapi.testclient import TestClient
 
 from diffweb import forge, gitio
 from diffweb.config import DiffwebConfig, load_config
+from diffweb import gitio
+from diffweb.config import DiffwebConfig, Noise, load_config
 from diffweb.gitio import WORKTREE
 from diffweb.state import State
 
@@ -528,6 +530,60 @@ def test_catalog_renders_pr_chip(client: TestClient, config: DiffwebConfig, tmp_
     assert "#42" in body and "pr-draft" in body
 
 
+# --- noise control --------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "path,noisy",
+    [
+        ("Cargo.lock", True),
+        ("uv.lock", True),
+        ("go.sum", True),
+        ("projects/svc/Cargo.lock", True),
+        ("api/generated/client.ts", True),
+        ("proto/thing_pb2.py", True),
+        ("api/thing.pb.go", True),
+        ("tests/__snapshots__/a.snap", True),
+        ("src/lib.rs", False),
+        ("locked.rs", False),
+        ("docs/generated-by-hand.md", False),
+    ],
+)
+def test_is_noisy(path: str, noisy: bool) -> None:
+    assert gitio.is_noisy(path, Noise().collapse_by_default) is noisy
+
+
+def test_noise_patterns_are_configurable() -> None:
+    assert gitio.is_noisy("src/lib.rs", ["*.rs"]) is True
+    assert gitio.is_noisy("Cargo.lock", []) is False
+
+
+def test_diff_endpoint_flags_noisy_files(
+    client: TestClient, config: DiffwebConfig, world: dict[str, Path], tmp_path: Path
+) -> None:
+    commit(world["repo"], "deps.lock", "pinned\n", "add a lockfile")
+    wid = wt_id(config, "proj")
+    files = {f["path"]: f for f in client.get(f"/api/w/{wid}/diff").json()["files"]}
+    assert files["deps.lock"]["noisy"] is True
+    assert files["a.txt"]["noisy"] is False
+
+
+def test_noise_list_can_be_emptied(
+    client: TestClient, config: DiffwebConfig, world: dict[str, Path], tmp_path: Path
+) -> None:
+    commit(world["repo"], "deps.lock", "pinned\n", "add a lockfile")
+    p = tmp_path / "diffweb.yaml"
+    data = yaml.safe_load(p.read_text())
+    data["noise"] = {"collapse_by_default": []}
+    p.write_text(yaml.safe_dump(data))
+    from diffweb import app as app_module
+
+    app_module.reset_for_tests()
+    wid = wt_id(config, "proj")
+    files = {f["path"]: f for f in client.get(f"/api/w/{wid}/diff").json()["files"]}
+    assert files["deps.lock"]["noisy"] is False
+
+
 def test_pr_links_can_be_disabled(client: TestClient, config: DiffwebConfig, tmp_path: Path,
                                   fake_gh: Path) -> None:
     p = tmp_path / "diffweb.yaml"
@@ -541,8 +597,14 @@ def test_pr_links_can_be_disabled(client: TestClient, config: DiffwebConfig, tmp
     forge.clear_cache()
     assert "#42" not in client.get("/").text
 
+
 def test_worktree_page_wires_up_keyboard_nav(client: TestClient, config: DiffwebConfig) -> None:
     # The behaviour itself is browser-tested; this catches the wiring regressing.
     body = client.get(f"/w/{wt_id(config, 'proj')}").text
     assert "/static/keys.js" in body
     assert 'id="key-help-btn"' in body
+
+
+
+def test_hide_reviewed_control_is_present(client: TestClient, config: DiffwebConfig) -> None:
+    assert 'id="hide-reviewed"' in client.get(f"/w/{wt_id(config, 'proj')}").text

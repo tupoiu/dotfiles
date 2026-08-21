@@ -40,6 +40,9 @@ features:
 limits:
   max_inline_diff_bytes: 1500000   # above this the page loads file-by-file
   max_inline_files: 300
+noise:
+  collapse_by_default: ["*.lock", "*.sum", "**/generated/**", "**/*_pb2.py",
+                        "**/*.pb.go", "**/__snapshots__/**"]
 tools:
   difft_path: null         # defaults to whatever `difft` is on PATH
   gh_path: null            # defaults to whatever `gh` is on PATH
@@ -84,7 +87,7 @@ an amber dot when there are uncommitted files, and a chip linking to the branch'
 pull request. PRs come from `gh pr list --head <branch>`, cached for two minutes.
 Every failure mode - no `gh`, not logged in, offline, no PR - just means no chip.
 
-**Keyboard.** `j`/`k` move between files, `g`/`G` jump to first/last, `o` (or
+**Keyboard.** `j`/`k` move between files (skipping any hidden by *hide reviewed*), `g`/`G` jump to first/last, `o` (or
 Enter) collapses the focused file, `v` marks it reviewed, `c` collapses or
 expands everything, `s` toggles side-by-side, and `?` shows the list. Shortcuts
 stay out of the way while you are typing in the base-ref box or a commit select.
@@ -92,6 +95,14 @@ stay out of the way while you are typing in the base-ref box or a commit select.
 File headers stick below the toolbar as you scroll, so you always know which
 file you are looking at - this reuses diff2html's own `stickyFileHeaders`,
 overridden only to offset it past our toolbar.
+**Noise control.** Lockfiles, generated code and snapshots are real changes that
+are almost never worth reading. Anything matching `noise.collapse_by_default`
+starts collapsed and wears a `generated` badge - but only the first time that file
+is seen, so deliberately opening one sticks. Set the list to `[]` to turn it off.
+
+Every file header shows its own `+`/`−` counts, which is what you want when the
+whole diff is collapsed, and `hide reviewed` drops ticked files out of the page
+entirely so that late in a review only the remaining work is on screen.
 
 **Live reload.** The page opens an SSE stream; the server polls `HEAD` plus
 `git status --porcelain=v2` every two seconds and pushes a change event, and the
