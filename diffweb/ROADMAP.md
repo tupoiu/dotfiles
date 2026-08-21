@@ -11,8 +11,9 @@ Scratchpad. Add anything, however half-formed - nothing here is committed to.
 
 ## Next up
 
-- Make the "chips" column in the homepage also show when the PR was first made if
-  it exists, or if theres "No PR ({refresh emoji} 1m)" or "No PR ({refresh} 2d)".
+- ~~Make the "chips" column in the homepage also show when the PR was first made if
+  it exists, or if theres "No PR ({refresh emoji} 1m)" or "No PR ({refresh} 2d)".~~
+  Done - the 🔄 is clickable and re-asks gh.
 - Refactoring cleanup: `app.py` is doing route handling, caching and PR fan-out at
   once, `worktree.js` has grown to several hundred lines of globals, and the
   gitio/app boundary leaks (`app.py` reaches for `gitio._try_git`). Split the
@@ -27,7 +28,7 @@ Scratchpad. Add anything, however half-formed - nothing here is committed to.
 - AI-generated change summary per worktree, shown on the catalog row.
 - Stacked view: one section per commit rather than one flattened range.
 - "What changed since I last looked" as a cross-worktree feed on the catalog page.
-- Keyboard navigation: `j`/`k` between files, `v` to mark reviewed, `]`/`[` between worktrees.
+- Keyboard navigation between *worktrees* (`]`/`[`); within a diff it already exists.
 - Word-level intra-line highlighting on the line renderer (diff2html does some of
   this already; difftastic does it properly).
 - Ignore-patterns per repo, e.g. always collapse `Cargo.lock` and generated files.

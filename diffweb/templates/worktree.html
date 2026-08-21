@@ -8,8 +8,10 @@
      data-end="{{ end }}"
      data-live="{{ 1 if features.live_reload else 0 }}">
   <span class="wt-name">{{ wt.name }} <span class="branch">{{ wt.branch }}</span>
-    {%- if pr %}<a href="{{ pr.url }}" target="_blank" rel="noopener"
-       class="pr-chip pr-{{ pr.status }}" title="{{ pr.title }}">{{ pr.label }}</a>{% endif %}</span>
+    {%- if pr and pr.pr %}<a href="{{ pr.pr.url }}" target="_blank" rel="noopener"
+       class="pr-chip pr-{{ pr.pr.status }}"
+       title="{{ pr.pr.title }}">{{ pr.pr.label }}</a>{% if pr.pr.opened_age %}<span
+       class="pr-age" title="opened {{ pr.pr.opened_age }} ago">{{ pr.pr.opened_age }}</span>{% endif %}{% endif %}</span>
   <label>base <input id="base" value="{{ base }}" size="16" spellcheck="false"></label>
   <label>from <select id="start"></select></label>
   <label>to <select id="end"></select></label>

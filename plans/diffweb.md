@@ -27,6 +27,7 @@ See `diffweb/README.md` for how to run it and `diffweb/ROADMAP.md` for ideas.
 - [x] Keyboard navigation and sticky file headers (`diffweb/static/keys.js`) — j/k/o/v/c/s/? all driven in a browser; a header stays pinned below the toolbar while scrolling
 - [x] Noise control — auto-collapse generated files, per-file churn, hide-reviewed (`diffweb/gitio.py:181`) — Cargo.lock and uv.lock start collapsed; reopening one sticks across reloads
 - [x] Merge the three onto `diffweb-integrated` and serve it — 72 tests pass, all three features verified working together on :8765
+- [x] PR chips carry an age — `#4312 18w` when a PR exists, `No PR (🔄 2d)` otherwise, with the 🔄 forcing a re-check — lookups persisted in SQLite so the age survives a restart; 94 tests pass and the refresh control was driven in a browser
 - [ ] Open-in-editor links — deliberately deferred, see ROADMAP
 - [ ] code-server + GitLens comparison — never spiked, nothing was running on this VM
 
@@ -80,6 +81,13 @@ See `diffweb/README.md` for how to run it and `diffweb/ROADMAP.md` for ideas.
   merges were all "both branches appended at the same anchor", so keeping both
   sides worked for CSS and prose — but for Python it grafted one test's tail onto
   another and still parsed. The suite caught it; reading the diff would not have.
+- **"No PR" and "gh is broken" are the same observation**, so the chip shows how
+  long ago it last managed to ask rather than implying the answer is current.
+  That pushed the PR cache out of memory and into the state DB.
+- **An inline `onclick="event.stopPropagation()"` silently killed event
+  delegation.** Rows navigate from their own click handler, so the refresh
+  button needed a capture-phase listener; stopping propagation on the button
+  itself meant the delegated handler never ran at all.
 - **The tool now finds its own worktrees**, because `~/worktrees/*/*` matches
   `~/worktrees/dotfiles/*`. Unplanned, and the best dogfooding available.
 

@@ -8,8 +8,11 @@ no ~/code at all.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -17,8 +20,6 @@ import yaml
 from fastapi.testclient import TestClient
 
 from diffweb import forge, gitio
-from diffweb.config import DiffwebConfig, load_config
-from diffweb import gitio
 from diffweb.config import DiffwebConfig, Noise, load_config
 from diffweb.gitio import WORKTREE
 from diffweb.state import State
@@ -100,7 +101,8 @@ def fake_gh(tmp_path: Path) -> Path:
         "#!/bin/sh\n"
         f"printf x >> {counter}\n"
         'printf \'[{"number":42,"title":"Add the thing",'
-        '"url":"https://example.invalid/pr/42","state":"OPEN","isDraft":true}]\'\n'
+        '"url":"https://example.invalid/pr/42","state":"OPEN","isDraft":true,'
+        '"createdAt":"2026-08-18T09:00:00Z"}]\'\n'
     )
     script.chmod(0o755)
     return script
@@ -483,18 +485,15 @@ def test_summary_carries_branch_context(world: dict[str, Path]) -> None:
 
 
 def test_pr_lookup_without_gh_is_none(world: dict[str, Path], tmp_path: Path) -> None:
-    forge.clear_cache()
-    assert forge.pull_request(str(world["repo"]), "feature", gh_path=str(tmp_path / "no-gh")) is None
+    assert forge.query(str(world["repo"]), "feature", gh_path=str(tmp_path / "no-gh")) is None
 
 
 def test_pr_lookup_skips_detached_head(world: dict[str, Path], fake_gh: Path) -> None:
-    forge.clear_cache()
-    assert forge.pull_request(str(world["repo"]), "detached @ abc123", gh_path=str(fake_gh)) is None
+    assert forge.query(str(world["repo"]), "detached @ abc123", gh_path=str(fake_gh)) is None
 
 
 def test_pr_lookup_parses_gh_output(world: dict[str, Path], fake_gh: Path) -> None:
-    forge.clear_cache()
-    pr = forge.pull_request(str(world["repo"]), "feature", gh_path=str(fake_gh))
+    pr = forge.query(str(world["repo"]), "feature", gh_path=str(fake_gh))
     assert pr is not None
     assert (pr.number, pr.label, pr.status) == (42, "#42", "draft")
     assert pr.url.endswith("/42")
@@ -504,16 +503,65 @@ def test_pr_lookup_survives_a_broken_gh(world: dict[str, Path], tmp_path: Path) 
     broken = tmp_path / "gh-broken"
     broken.write_text("#!/bin/sh\necho 'not json' \nexit 0\n")
     broken.chmod(0o755)
-    forge.clear_cache()
-    assert forge.pull_request(str(world["repo"]), "feature", gh_path=str(broken)) is None
+    assert forge.query(str(world["repo"]), "feature", gh_path=str(broken)) is None
 
 
-def test_pr_lookup_is_cached(world: dict[str, Path], fake_gh: Path, tmp_path: Path) -> None:
+def test_pr_status_is_cached_in_the_state_db(
+    world: dict[str, Path], fake_gh: Path, tmp_path: Path
+) -> None:
     counter = tmp_path / "gh-calls"
-    forge.clear_cache()
+    st = State(tmp_path / "pr.db")
     for _ in range(3):
-        forge.pull_request(str(world["repo"]), "feature", gh_path=str(fake_gh))
+        found = forge.status(st, "wt1", str(world["repo"]), "feature", gh_path=str(fake_gh))
     assert counter.read_text().count("x") == 1
+    assert found.pr.number == 42
+    assert found.checked_age is not None
+
+
+def test_pr_status_force_refresh_re_asks(world: dict[str, Path], fake_gh: Path, tmp_path: Path) -> None:
+    counter = tmp_path / "gh-calls"
+    st = State(tmp_path / "pr.db")
+    forge.status(st, "wt1", str(world["repo"]), "feature", gh_path=str(fake_gh))
+    forge.status(st, "wt1", str(world["repo"]), "feature", gh_path=str(fake_gh), force=True)
+    assert counter.read_text().count("x") == 2
+
+
+def test_pr_status_records_a_negative_answer(world: dict[str, Path], tmp_path: Path) -> None:
+    """No PR is a real answer, and must be cached with its own timestamp."""
+    empty = tmp_path / "gh-empty"
+    empty.write_text("#!/bin/sh\nprintf '[]'\n")
+    empty.chmod(0o755)
+    st = State(tmp_path / "pr.db")
+    found = forge.status(st, "wt1", str(world["repo"]), "feature", gh_path=str(empty))
+    assert found.pr is None
+    assert found.checked_at is not None
+    assert st.pr_record("wt1", "feature") == (None, found.checked_at)
+
+
+def test_pr_record_ignores_a_different_branch(tmp_path: Path) -> None:
+    st = State(tmp_path / "pr.db")
+    st.save_pr("wt1", "feature", {"number": 1}, 100.0)
+    assert st.pr_record("wt1", "feature") == ({"number": 1}, 100.0)
+    # The worktree has been switched since we looked.
+    assert st.pr_record("wt1", "other") is None
+
+
+def test_pr_created_at_is_parsed(world: dict[str, Path], fake_gh: Path) -> None:
+    pr = forge.query(str(world["repo"]), "feature", gh_path=str(fake_gh))
+    assert pr.created_at == pytest.approx(datetime(2026, 8, 18, 9, tzinfo=timezone.utc).timestamp())
+    assert pr.opened_age is not None
+
+
+@pytest.mark.parametrize(
+    "seconds,expected",
+    [
+        (0, "0s"), (45, "45s"), (60, "1m"), (119, "1m"), (3599, "59m"),
+        (3600, "1h"), (86399, "23h"), (86400, "1d"), (2 * 86400, "2d"),
+        (7 * 86400, "1w"), (60 * 86400, "8w"), (400 * 86400, "1y"), (-5, "0s"),
+    ],
+)
+def test_relative_age(seconds: float, expected: str) -> None:
+    assert forge.relative_age(seconds) == expected
 
 
 def test_catalog_renders_pr_chip(client: TestClient, config: DiffwebConfig, tmp_path: Path,
@@ -525,7 +573,6 @@ def test_catalog_renders_pr_chip(client: TestClient, config: DiffwebConfig, tmp_
     from diffweb import app as app_module
 
     app_module.reset_for_tests()
-    forge.clear_cache()
     body = client.get("/").text
     assert "#42" in body and "pr-draft" in body
 
@@ -594,7 +641,6 @@ def test_pr_links_can_be_disabled(client: TestClient, config: DiffwebConfig, tmp
     from diffweb import app as app_module
 
     app_module.reset_for_tests()
-    forge.clear_cache()
     assert "#42" not in client.get("/").text
 
 
@@ -608,3 +654,70 @@ def test_worktree_page_wires_up_keyboard_nav(client: TestClient, config: Diffweb
 
 def test_hide_reviewed_control_is_present(client: TestClient, config: DiffwebConfig) -> None:
     assert 'id="hide-reviewed"' in client.get(f"/w/{wt_id(config, 'proj')}").text
+
+
+def _with_gh(tmp_path: Path, gh: Path, **features: object) -> None:
+    p = tmp_path / "diffweb.yaml"
+    data = yaml.safe_load(p.read_text())
+    data.setdefault("tools", {})["gh_path"] = str(gh)
+    data["features"].update(features)
+    p.write_text(yaml.safe_dump(data))
+    from diffweb import app as app_module
+
+    app_module.reset_for_tests()
+
+
+def test_catalog_chip_shows_when_the_pr_was_opened(
+    client: TestClient, config: DiffwebConfig, tmp_path: Path, fake_gh: Path
+) -> None:
+    _with_gh(tmp_path, fake_gh)
+    body = client.get("/").text
+    assert "#42" in body
+    assert 'class="pr-age"' in body
+
+
+def test_catalog_chip_shows_no_pr_with_the_age_of_the_check(
+    client: TestClient, config: DiffwebConfig, tmp_path: Path
+) -> None:
+    empty = tmp_path / "gh-empty"
+    empty.write_text("#!/bin/sh\nprintf '[]'\n")
+    empty.chmod(0o755)
+    _with_gh(tmp_path, empty)
+    body = client.get("/").text
+    assert "No PR" in body
+    assert "pr-refresh" in body
+    # Seconds, not a fixed 0s: under a loaded parallel run the check itself takes time.
+    assert re.search(r'<span class="pr-checked">\d+s</span>', body)
+
+
+def test_refresh_endpoint_re_asks_and_reports_the_age(
+    client: TestClient, config: DiffwebConfig, tmp_path: Path, fake_gh: Path
+) -> None:
+    _with_gh(tmp_path, fake_gh)
+    wid = wt_id(config, "proj")
+    body = client.post(f"/api/w/{wid}/pr/refresh").json()
+    assert body["pr"]["label"] == "#42"
+    assert body["pr"]["status"] == "draft"
+    assert body["pr"]["opened_age"]
+    assert re.fullmatch(r"\d+s", body["checked_age"])
+
+
+def test_refresh_endpoint_404s_when_pr_links_are_off(
+    client: TestClient, config: DiffwebConfig, tmp_path: Path, fake_gh: Path
+) -> None:
+    _with_gh(tmp_path, fake_gh, pr_links=False)
+    assert client.post(f"/api/w/{wt_id(config, 'proj')}/pr/refresh").status_code == 404
+
+
+def test_stale_check_reports_a_growing_age(
+    client: TestClient, config: DiffwebConfig, tmp_path: Path
+) -> None:
+    """A gh that has not been reachable for days must say so, not lie fresh."""
+    missing = tmp_path / "gh-gone"
+    _with_gh(tmp_path, missing)
+    from diffweb import app as app_module
+
+    state = app_module.get_state()
+    wid = wt_id(config, "proj")
+    state.save_pr(wid, "feature", None, time.time() - 2 * 86400)
+    assert '<span class="pr-checked">2d</span>' in client.get("/").text

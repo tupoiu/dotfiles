@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
+import threading
 import time
 from pathlib import Path
 
@@ -18,6 +20,12 @@ CREATE TABLE IF NOT EXISTS settings (
     worktree TEXT PRIMARY KEY,
     base_ref TEXT
 );
+CREATE TABLE IF NOT EXISTS pr_cache (
+    worktree   TEXT PRIMARY KEY,
+    branch     TEXT NOT NULL,
+    payload    TEXT,          -- JSON for the PR, or NULL meaning "looked, found none"
+    checked_at REAL NOT NULL  -- unix time, so the age survives a restart
+);
 """
 
 
@@ -28,6 +36,8 @@ class State:
         # check_same_thread=False: FastAPI serves sync handlers from a pool.
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
+        # Background PR refreshes write from other threads.
+        self._write_lock = threading.Lock()
         self._conn.executescript(SCHEMA)
         self._conn.commit()
 
@@ -46,6 +56,29 @@ class State:
             (worktree, base_ref),
         )
         self._conn.commit()
+
+    def pr_record(self, worktree: str, branch: str) -> tuple[dict | None, float] | None:
+        """The stored PR lookup for this worktree, or None if we have not looked.
+
+        A record for a different branch is no record at all - the worktree has
+        been switched since.
+        """
+        row = self._conn.execute(
+            "SELECT branch, payload, checked_at FROM pr_cache WHERE worktree = ?", (worktree,)
+        ).fetchone()
+        if row is None or row["branch"] != branch:
+            return None
+        return (json.loads(row["payload"]) if row["payload"] else None, row["checked_at"])
+
+    def save_pr(self, worktree: str, branch: str, payload: dict | None, checked_at: float) -> None:
+        with self._write_lock:
+            self._conn.execute(
+                "INSERT INTO pr_cache (worktree, branch, payload, checked_at) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(worktree) DO UPDATE SET branch = excluded.branch, "
+                "payload = excluded.payload, checked_at = excluded.checked_at",
+                (worktree, branch, json.dumps(payload) if payload is not None else None, checked_at),
+            )
+            self._conn.commit()
 
     def reviewed(self, worktree: str) -> dict[str, str]:
         rows = self._conn.execute("SELECT path, blob_sha FROM reviewed WHERE worktree = ?", (worktree,)).fetchall()

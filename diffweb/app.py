@@ -87,11 +87,14 @@ def _range(wt: Worktree, base: str, start: str | None, end: str | None) -> tuple
 
 
 def _attach_pull_requests(summaries: list[gitio.Summary], config: DiffwebConfig) -> None:
-    """Look PRs up in parallel; gh is slow enough that serial would be felt."""
+    """Look PRs up in parallel; a first, uncached lookup is slow enough to feel."""
+    state = get_state()
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         futures = {
             pool.submit(
-                forge.pull_request,
+                forge.status,
+                state,
+                s.worktree.id,
                 s.worktree.path,
                 s.worktree.branch,
                 config.tools.gh_path,
@@ -141,8 +144,13 @@ def worktree_page(
             "end": end or "",
             "features": config.features,
             "difft_available": bool(config.tools.difft_path or shutil.which("difft")),
-            "pr": forge.pull_request(
-                wt.path, wt.branch, config.tools.gh_path, config.tools.gh_timeout_seconds
+            "pr": forge.status(
+                get_state(),
+                wt.id,
+                wt.path,
+                wt.branch,
+                config.tools.gh_path,
+                config.tools.gh_timeout_seconds,
             )
             if config.features.pr_links
             else None,
@@ -203,6 +211,30 @@ def api_diff(
         "shas": shas,
         "lazy": lazy,
         "diff": "" if lazy else cached_diff(wt.path, s, e) if not files else gitio.diff_text(wt.path, s, e, files),
+    }
+
+
+@app.post("/api/w/{wt_id}/pr/refresh")
+def api_refresh_pr(wt_id: str, config: DiffwebConfig = Depends(get_config)) -> Any:
+    """Re-ask gh now. Backs the refresh control on each chip."""
+    if not config.features.pr_links:
+        raise HTTPException(404, "pr links are disabled in config")
+    wt = find_worktree(wt_id, config)
+    found = forge.status(
+        get_state(),
+        wt.id,
+        wt.path,
+        wt.branch,
+        config.tools.gh_path,
+        config.tools.gh_timeout_seconds,
+        force=True,
+    )
+    return {
+        "pr": found.pr.as_dict() | {"label": found.pr.label, "status": found.pr.status,
+                                    "opened_age": found.pr.opened_age}
+        if found.pr
+        else None,
+        "checked_age": found.checked_age,
     }
 
 

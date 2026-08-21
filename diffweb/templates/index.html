@@ -19,19 +19,28 @@
     <tr onclick="location.href='/w/{{ s.worktree.id }}'"
         data-name="{{ s.worktree.name }}" data-branch="{{ s.worktree.branch }}"
         data-base="{{ s.base }}" data-ahead="{{ s.ahead }}" data-files="{{ s.files }}"
-        data-pr="{{ s.pr.number if s.pr else 0 }}"
+        data-pr="{{ s.pr.pr.number if s.pr and s.pr.pr else 0 }}"
         data-churn="{{ s.added + s.removed }}" data-reviewed="{{ s.reviewed }}"
         data-last="{{ s.last_commit }}">
       <td class="name"><a href="/w/{{ s.worktree.id }}">{{ s.worktree.name }}</a>
           <span class="path">{{ s.worktree.path }}</span></td>
       <td class="branch">{{ s.worktree.branch }}
         {%- if s.dirty %}<span class="dirty" title="{{ s.dirty }} uncommitted files">●</span>{% endif %}</td>
-      <td class="pr">
-        {%- if s.pr -%}
-        <a href="{{ s.pr.url }}" target="_blank" rel="noopener"
-           class="pr-chip pr-{{ s.pr.status }}" title="{{ s.pr.title }}"
-           onclick="event.stopPropagation()">{{ s.pr.label }}</a>
-        {%- else -%}<span class="dim">&mdash;</span>{%- endif -%}
+      <td class="pr" data-wt="{{ s.worktree.id }}">
+        {%- if not s.pr -%}
+          <span class="dim">&mdash;</span>
+        {%- elif s.pr.pr -%}
+          <a href="{{ s.pr.pr.url }}" target="_blank" rel="noopener"
+             class="pr-chip pr-{{ s.pr.pr.status }}" title="{{ s.pr.pr.title }}"
+             onclick="event.stopPropagation()">{{ s.pr.pr.label }}</a>
+          {%- if s.pr.pr.opened_age %}<span class="pr-age"
+             title="opened {{ s.pr.pr.opened_age }} ago">{{ s.pr.pr.opened_age }}</span>{% endif -%}
+        {%- else -%}
+          <span class="pr-chip pr-none">No PR
+            (<button type="button" class="pr-refresh"
+                     title="Checked {{ s.pr.checked_age }} ago. Check again.">&#128260;</button>
+            <span class="pr-checked">{{ s.pr.checked_age }}</span>)</span>
+        {%- endif -%}
       </td>
       <td class="dim">{{ s.base }}</td>
       {% if s.error %}

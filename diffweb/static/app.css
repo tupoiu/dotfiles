@@ -183,3 +183,14 @@ input, select {
   color: var(--dim); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px;
 }
 body.hide-reviewed .d2h-file-wrapper.is-reviewed { display: none; }
+
+/* PR chip extras: how long ago it was opened, or how long ago we last looked. */
+.pr-age { margin-left: 6px; font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.pr-none { color: var(--dim); border-style: dashed; }
+.pr-refresh {
+  background: none; border: 0; padding: 0; margin: 0 1px; font-size: 10px;
+  line-height: 1; cursor: pointer; filter: grayscale(1); opacity: .8;
+}
+.pr-refresh:hover { filter: none; opacity: 1; }
+.pr-refresh.spinning { animation: pr-spin .8s linear infinite; }
+@keyframes pr-spin { to { transform: rotate(360deg); } }

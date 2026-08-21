@@ -83,9 +83,17 @@ difftastic's palette is tuned for a dark terminal.
 
 **Branch context.** Each row shows how far ahead of its base the branch is, a red
 `↓1` if it has fallen *behind* the base (your diff is against an old merge base),
-an amber dot when there are uncommitted files, and a chip linking to the branch's
-pull request. PRs come from `gh pr list --head <branch>`, cached for two minutes.
-Every failure mode - no `gh`, not logged in, offline, no PR - just means no chip.
+an amber dot when there are uncommitted files, and a PR chip.
+
+The chip is either `#4312 18w` - a link to the pull request, plus how long ago it
+was opened - or `No PR (🔄 2d)`, where the duration is how long ago we last managed
+to ask. Clicking the 🔄 asks again straight away.
+
+PRs come from `gh pr list --head <branch>`, stored in the state DB rather than in
+memory so the age is honest across restarts, and refreshed in the background once
+a stored answer is over two minutes old. Only the very first lookup blocks. gh
+being missing, unauthenticated or offline is indistinguishable from "there is no
+PR", which is exactly why the chip shows its age instead of claiming freshness.
 
 **Keyboard.** `j`/`k` move between files (skipping any hidden by *hide reviewed*), `g`/`G` jump to first/last, `o` (or
 Enter) collapses the focused file, `v` marks it reviewed, `c` collapses or
