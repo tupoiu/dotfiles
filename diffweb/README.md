@@ -75,6 +75,15 @@ Without it the toggle stays disabled and the endpoint returns that instruction
 rather than an error. The structural pane is dark in both colour schemes because
 difftastic's palette is tuned for a dark terminal.
 
+**Keyboard.** `j`/`k` move between files, `g`/`G` jump to first/last, `o` (or
+Enter) collapses the focused file, `v` marks it reviewed, `c` collapses or
+expands everything, `s` toggles side-by-side, and `?` shows the list. Shortcuts
+stay out of the way while you are typing in the base-ref box or a commit select.
+
+File headers stick below the toolbar as you scroll, so you always know which
+file you are looking at - this reuses diff2html's own `stickyFileHeaders`,
+overridden only to offset it past our toolbar.
+
 **Live reload.** The page opens an SSE stream; the server polls `HEAD` plus
 `git status --porcelain=v2` every two seconds and pushes a change event, and the
 page re-renders in place keeping your scroll position.

@@ -433,3 +433,10 @@ def test_structural_renders(client: TestClient, config: DiffwebConfig, tmp_path:
     body = client.get(f"/api/w/{wid}/diff", params={"renderer": "structural"}).json()
     assert body["renderer"] == "structural"
     assert "c.txt" in body["html"]
+
+
+def test_worktree_page_wires_up_keyboard_nav(client: TestClient, config: DiffwebConfig) -> None:
+    # The behaviour itself is browser-tested; this catches the wiring regressing.
+    body = client.get(f"/w/{wt_id(config, 'proj')}").text
+    assert "/static/keys.js" in body
+    assert 'id="key-help-btn"' in body

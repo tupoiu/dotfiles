@@ -60,6 +60,17 @@ $toggleAll.addEventListener("click", () => {
   refreshToggleAll();
 });
 
+// The toolbar wraps on narrow viewports, so sticky file headers cannot assume
+// a fixed offset.
+function trackToolbarHeight() {
+  const bar = document.querySelector(".topbar");
+  const apply = () =>
+    document.documentElement.style.setProperty("--topbar-h", `${bar.offsetHeight}px`);
+  apply();
+  new ResizeObserver(apply).observe(bar);
+}
+trackToolbarHeight();
+
 function status(text, busy) {
   $status.textContent = text;
   $status.classList.toggle("busy", !!busy);
@@ -143,6 +154,7 @@ function draw(diffText, target) {
     outputFormat: $sbs.checked ? "side-by-side" : "line-by-line",
     fileListToggle: true,
     fileContentToggle: false,
+    stickyFileHeaders: true,
   });
   ui.draw();
   ui.highlightCode();
@@ -212,6 +224,7 @@ function decorateFiles(root) {
   }
   saveCollapsed();
   refreshToggleAll();
+  window.diffwebKeys?.refresh();
 }
 
 function shaFor(path) { return shas[path] || "worktree"; }
