@@ -9,6 +9,19 @@ Scratchpad. Add anything, however half-formed - nothing here is committed to.
 - **Inline comments** - notes pinned to a file+line, stored in the same SQLite DB.
   The thing Forgejo has that we do not.
 
+## Next up
+
+- Make the "chips" column in the homepage also show when the PR was first made if
+  it exists, or if theres "No PR ({refresh emoji} 1m)" or "No PR ({refresh} 2d)".
+- Refactoring cleanup: `app.py` is doing route handling, caching and PR fan-out at
+  once, `worktree.js` has grown to several hundred lines of globals, and the
+  gitio/app boundary leaks (`app.py` reaches for `gitio._try_git`). Split the
+  client into modules and give the server a service layer between routes and git.
+- Extra linting: nothing enforces style beyond the whitespace pre-commit hooks.
+  Add ruff (lint + format) for Python and a formatter/linter for the JS and CSS,
+  wire them into `.pre-commit-config.yaml` and a `poe lint` task, then fix the
+  backlog they surface in one pass.
+
 ## Ideas
 
 - AI-generated change summary per worktree, shown on the catalog row.
