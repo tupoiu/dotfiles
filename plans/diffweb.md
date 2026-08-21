@@ -28,6 +28,7 @@ See `diffweb/README.md` for how to run it and `diffweb/ROADMAP.md` for ideas.
 - [x] Noise control — auto-collapse generated files, per-file churn, hide-reviewed (`diffweb/gitio.py:181`) — Cargo.lock and uv.lock start collapsed; reopening one sticks across reloads
 - [x] Merge the three onto `diffweb-integrated` and serve it — 72 tests pass, all three features verified working together on :8765
 - [x] PR chips carry an age — `#4312 18w` when a PR exists, `No PR (🔄 2d)` otherwise, with the 🔄 forcing a re-check — lookups persisted in SQLite so the age survives a restart; 94 tests pass and the refresh control was driven in a browser
+- [x] Changed lines render as blocks, not alternating pairs (`diffweb/static/render-options.js`) — red test first, `-+-+` → `--++` on the real kasli `build.rs`, 98 tests pass
 - [ ] Open-in-editor links — deliberately deferred, see ROADMAP
 - [ ] code-server + GitLens comparison — never spiked, nothing was running on this VM
 
@@ -93,6 +94,13 @@ See `diffweb/README.md` for how to run it and `diffweb/ROADMAP.md` for ideas.
   `fc-match` on U+1F504 resolves to WenQuanYi Zen Hei, which has no coverage,
   and naming an emoji font stack in CSS did not rescue it. Replaced with an
   inline SVG. Only looking at a screenshot caught this - every test passed.
+- **diff2html re-orders what git already got right.** Its `matching: "lines"`
+  pairs each deletion with an insertion, so a hunk git emitted as `-,-,+,+`
+  renders `-,+,-,+`. `matching: "none"` restores the blocks and, contrary to
+  what the option name suggests, keeps the inline word-level highlighting.
+- **The core diff2html bundle runs under node**, unlike the `-ui` one, which
+  needs a DOM. That makes rendering assertions cheap: feed it a diff, count the
+  row classes, no browser. Worth reaching for before writing a browser test.
 - **The tool now finds its own worktrees**, because `~/worktrees/*/*` matches
   `~/worktrees/dotfiles/*`. Unplanned, and the best dogfooding available.
 

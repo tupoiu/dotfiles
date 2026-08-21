@@ -185,14 +185,8 @@ async function render() {
 
 function draw(diffText, target) {
   const node = target || $diff;
-  const ui = new Diff2HtmlUI(node, diffText, {
-    drawFileList: !target,
-    matching: "lines",
-    outputFormat: $sbs.checked ? "side-by-side" : "line-by-line",
-    fileListToggle: true,
-    fileContentToggle: false,
-    stickyFileHeaders: true,
-  });
+  const ui = new Diff2HtmlUI(node, diffText,
+    diffwebRenderOptions({ sideBySide: $sbs.checked, drawFileList: !target }));
   ui.draw();
   ui.highlightCode();
   if (!target) decorateFiles(node);

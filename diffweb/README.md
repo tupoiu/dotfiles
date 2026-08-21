@@ -97,6 +97,13 @@ a stored answer is over two minutes old. Only the very first lookup blocks. gh
 being missing, unauthenticated or offline is indistinguishable from "there is no
 PR", which is exactly why the chip shows its age instead of claiming freshness.
 
+**Changed lines are grouped.** Git emits a hunk as all its removals then all its
+additions; diff2html's `matching` option pairs each removal with an addition and
+renders `-,+,-,+` instead. Two related removals followed by their two
+replacements read better, so `matching` is `none` - which costs nothing, as the
+inline word-level highlighting survives it. The options live in
+`static/render-options.js` so the tests bind to what actually ships.
+
 **Keyboard.** `j`/`k` move between files (skipping any hidden by *hide reviewed*), `g`/`G` jump to first/last, `o` (or
 Enter) collapses the focused file, `v` marks it reviewed, `c` collapses or
 expands everything, `s` toggles side-by-side, and `?` shows the list. Shortcuts
@@ -141,6 +148,10 @@ page re-renders in place keeping your scroll position.
 | `state.py` | SQLite reviewed-state and per-worktree base-ref overrides |
 | `app.py` | FastAPI routes |
 | `static/`, `templates/` | the UI; `static/vendor/` is gitignored, populated by `poe fetch-diffweb-assets` |
+
+A few tests shell out to `node` with diff2html's core bundle to assert on real
+rendered HTML without a browser; they skip if node or the vendored bundle is
+missing, so run `poe fetch-diffweb-assets` first to get full coverage.
 
 Tests are in `tests/test_diffweb.py` and build a throwaway git repo, a linked
 worktree and a bare origin under `tmp_path`. They never read your real repos and

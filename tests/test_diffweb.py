@@ -721,3 +721,78 @@ def test_stale_check_reports_a_growing_age(
     wid = wt_id(config, "proj")
     state.save_pr(wid, "feature", None, time.time() - 2 * 86400)
     assert '<span class="pr-checked">2d</span>' in client.get("/").text
+
+
+# --- how changed lines are grouped ----------------------------------------
+
+NODE = shutil.which("node")
+D2H_CORE = Path(__file__).parent.parent / "diffweb" / "static" / "vendor" / "diff2html.min.js"
+needs_node = pytest.mark.skipif(
+    not NODE or not D2H_CORE.exists(),
+    reason="needs node and the vendored diff2html core (poe fetch-diffweb-assets)",
+)
+
+TWO_FOR_TWO = "\n".join([
+    "diff --git a/f.txt b/f.txt",
+    "--- a/f.txt",
+    "+++ b/f.txt",
+    "@@ -1,3 +1,3 @@",
+    " unchanged",
+    "-the quick brown fox",
+    "-second old line",
+    "+the quick red fox",
+    "+second new line",
+    "",
+])
+
+
+def render_order(diff: str, side_by_side: bool = False) -> str:
+    """One character per rendered row: - deletion, + insertion, . context."""
+    argv = [NODE, str(Path(__file__).parent / "render_order.cjs")]
+    if side_by_side:
+        argv.append("--side-by-side")
+    proc = subprocess.run(argv, input=diff, capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr
+    return proc.stdout
+
+
+@needs_node
+@pytest.mark.parametrize("side_by_side", [False, True])
+def test_deletions_are_grouped_before_insertions(side_by_side: bool) -> None:
+    """Git emits -,-,+,+; the page must not interleave them back to -,+,-,+."""
+    order = render_order(TWO_FOR_TWO, side_by_side).replace(".", "")
+    assert order == "--++", f"expected a block of deletions then insertions, got {order!r}"
+
+
+@needs_node
+def test_grouping_survives_a_longer_run() -> None:
+    diff = "\n".join([
+        "diff --git a/f.txt b/f.txt",
+        "--- a/f.txt",
+        "+++ b/f.txt",
+        "@@ -1,7 +1,7 @@",
+        " keep",
+        *[f"-old {i}" for i in range(3)],
+        *[f"+new {i}" for i in range(3)],
+        "",
+    ])
+    assert render_order(diff).replace(".", "") == "---+++"
+
+
+@needs_node
+def test_word_level_highlighting_is_not_lost_by_the_grouping() -> None:
+    """Grouping must not cost the inline word diffs - they are the reason the
+    interleaving option was there in the first place."""
+    argv = [NODE, "-e", (
+        "const p=require('path'),S=p.join(process.cwd(),'diffweb','static');"
+        "const {html}=require(p.join(S,'vendor','diff2html.min.js'));"
+        "const {diffwebRenderOptions}=require(p.join(S,'render-options.js'));"
+        "const d=require('fs').readFileSync(0,'utf8');"
+        "process.stdout.write(String((html(d,diffwebRenderOptions()).match(/<(ins|del)>/g)||[]).length));"
+    )]
+    proc = subprocess.run(
+        argv, input=TWO_FOR_TWO, capture_output=True, text=True,
+        cwd=Path(__file__).parent.parent,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert int(proc.stdout) >= 4
