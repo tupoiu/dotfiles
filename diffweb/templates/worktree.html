@@ -19,6 +19,7 @@
     structural</label>
   {% endif %}
   <button type="button" id="toggle-all" class="linkish">collapse all</button>
+  <button type="button" id="key-help-btn" class="linkish" title="Keyboard shortcuts">?</button>
   <span id="status" class="status"></span>
 </div>
 {% endblock %}
@@ -29,4 +30,5 @@
 {% block scripts %}
 <script src="/static/vendor/diff2html-ui.min.js"></script>
 <script src="/static/worktree.js"></script>
+<script src="/static/keys.js"></script>
 {% endblock %}

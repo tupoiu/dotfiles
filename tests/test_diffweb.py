@@ -540,3 +540,9 @@ def test_pr_links_can_be_disabled(client: TestClient, config: DiffwebConfig, tmp
     app_module.reset_for_tests()
     forge.clear_cache()
     assert "#42" not in client.get("/").text
+
+def test_worktree_page_wires_up_keyboard_nav(client: TestClient, config: DiffwebConfig) -> None:
+    # The behaviour itself is browser-tested; this catches the wiring regressing.
+    body = client.get(f"/w/{wt_id(config, 'proj')}").text
+    assert "/static/keys.js" in body
+    assert 'id="key-help-btn"' in body

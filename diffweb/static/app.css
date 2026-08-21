@@ -1,9 +1,11 @@
 :root {
+  --accent-soft: #eaf1ff;
   --bg: #ffffff; --fg: #1b1f24; --dim: #6a737d; --line: #e3e6ea;
   --accent: #2f6feb; --add: #1a7f37; --del: #cf222e; --panel: #f6f8fa;
 }
 @media (prefers-color-scheme: dark) {
   :root {
+    --accent-soft: #16233a;
     --bg: #0e1116; --fg: #d7dde5; --dim: #8b949e; --line: #262c36;
     --accent: #6ea8ff; --add: #3fb950; --del: #f85149; --panel: #161b22;
   }
@@ -140,3 +142,34 @@ input, select {
 .catalog .pr .pr-chip { margin-left: 0; }
 .behind { color: var(--del); font-size: 11px; margin-left: 6px; }
 .dirty { color: #d29922; margin-left: 6px; font-size: 10px; }
+
+/* Review ergonomics: sticky file headers, keyboard focus, help overlay. */
+
+/* diff2html already sticks file headers (its `stickyFileHeaders` option adds
+   .d2h-sticky-header), but pins them at top:0, which puts them under our own
+   sticky toolbar. Reuse its mechanism and just correct the offset - matching
+   its two-class specificity so this wins. */
+.d2h-file-header.d2h-sticky-header {
+  top: var(--topbar-h, 41px);
+  z-index: 5;
+  background: var(--panel);
+}
+
+.d2h-file-wrapper.focused { outline: 2px solid var(--accent); outline-offset: -1px; }
+.d2h-file-wrapper.focused .d2h-file-header { background: var(--accent-soft, var(--panel)); }
+
+#key-help {
+  position: fixed; inset: 0; margin: auto; width: min(420px, 90vw); height: max-content;
+  background: var(--bg); color: var(--fg); border: 1px solid var(--line);
+  border-radius: 10px; padding: 20px 24px; z-index: 100;
+  box-shadow: 0 12px 48px rgb(0 0 0 / .35);
+}
+#key-help h2 { margin: 0 0 12px; font-size: 14px; }
+#key-help dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0; }
+#key-help dt { margin: 0; }
+#key-help dd { margin: 0; color: var(--dim); }
+#key-help kbd {
+  font: 11px/1.6 ui-monospace, monospace; border: 1px solid var(--line);
+  border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: var(--panel);
+}
+#key-help p { margin: 14px 0 0; font-size: 11px; }
