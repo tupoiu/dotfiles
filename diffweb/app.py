@@ -149,6 +149,8 @@ def api_diff(
     s, e = _range(wt, base, start, end)
 
     stats = gitio.numstat(wt.path, s, e)
+    for row in stats:
+        row["noisy"] = gitio.is_noisy(str(row["path"]), config.noise.collapse_by_default)
     shas = gitio.blob_shas(wt.path, s, e)
     review = state.review_status(wt_id, shas) if config.features.reviewed_state else {}
 

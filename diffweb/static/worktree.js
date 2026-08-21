@@ -6,6 +6,7 @@ const $base = document.getElementById("base");
 const $start = document.getElementById("start");
 const $end = document.getElementById("end");
 const $sbs = document.getElementById("sbs");
+const $hideReviewed = document.getElementById("hide-reviewed");
 const $structural = document.getElementById("structural");
 const $status = document.getElementById("status");
 const $summary = document.getElementById("summary");
@@ -21,6 +22,12 @@ $sbs.addEventListener("change", () => {
 });
 $structural?.addEventListener("change", render);
 
+$hideReviewed.checked = localStorage.getItem("diffweb.hide-reviewed") === "1";
+$hideReviewed.addEventListener("change", () => {
+  localStorage.setItem("diffweb.hide-reviewed", $hideReviewed.checked ? "1" : "0");
+  applyHideReviewed();
+});
+
 // Which files are collapsed, remembered per worktree so a re-render (live
 // reload, switching to side-by-side) does not throw the state away.
 const COLLAPSE_KEY = `diffweb.collapsed.${WT}`;
@@ -33,6 +40,32 @@ function saveCollapsed() {
   try {
     localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...collapsed]));
   } catch { /* private mode; collapsing still works for this page load */ }
+}
+
+// Lockfiles and generated code start collapsed, but only the first time we see
+// them: after that the user's own choice wins, including deliberately opening one.
+function seedNoise(files) {
+  if (seededNoise) return;
+  seededNoise = true;
+  const seenKey = `diffweb.noise-seeded.${WT}`;
+  let alreadySeeded = new Set();
+  try {
+    alreadySeeded = new Set(JSON.parse(localStorage.getItem(seenKey) || "[]"));
+  } catch { /* nothing seeded yet */ }
+
+  let changed = false;
+  for (const f of files) {
+    if (f.noisy && !alreadySeeded.has(f.path)) {
+      collapsed.add(f.path);
+      alreadySeeded.add(f.path);
+      changed = true;
+    }
+  }
+  if (!changed) return;
+  saveCollapsed();
+  try {
+    localStorage.setItem(seenKey, JSON.stringify([...alreadySeeded]));
+  } catch { /* storage unavailable; they just re-collapse next time */ }
 }
 
 function setCollapsed(wrapper, path, value) {
@@ -94,6 +127,8 @@ async function loadCommits() {
 
 let currentReview = {};
 let shas = {};
+let fileInfo = {};          // path -> {added, removed, binary, noisy}
+let seededNoise = false;    // auto-collapse noisy files once, not on every render
 
 async function render() {
   syncUrl();
@@ -109,6 +144,8 @@ async function render() {
 
   currentReview = data.review || {};
   shas = data.shas || {};
+  fileInfo = Object.fromEntries((data.files || []).map((f) => [f.path, f]));
+  seedNoise(data.files || []);
   const files = data.files || [];
   const added = files.reduce((n, f) => n + (f.added || 0), 0);
   const removed = files.reduce((n, f) => n + (f.removed || 0), 0);
@@ -182,6 +219,23 @@ function decorateFiles(root) {
       setCollapsed(wrapper, path, !wrapper.classList.contains("collapsed"));
     });
 
+    const info = fileInfo[path];
+    if (info) {
+      const stats = document.createElement("span");
+      stats.className = "file-stats";
+      stats.innerHTML = info.binary
+        ? '<span class="dim">binary</span>'
+        : `<span class="add">+${info.added}</span> <span class="del">−${info.removed}</span>`;
+      header.appendChild(stats);
+      if (info.noisy) {
+        const tag = document.createElement("span");
+        tag.className = "noise-tag";
+        tag.title = "matches noise.collapse_by_default; collapsed on first sight";
+        tag.textContent = "generated";
+        header.appendChild(tag);
+      }
+    }
+
     const stateForFile = currentReview[path];
     if (stateForFile !== undefined) {
       const label = document.createElement("label");
@@ -204,14 +258,27 @@ function decorateFiles(root) {
 
       box.addEventListener("change", () => {
         setCollapsed(wrapper, path, box.checked);
+        // Keep the filter honest without waiting for the next render.
+        wrapper.classList.toggle("is-reviewed", box.checked);
+        applyHideReviewed();
         fetch(api("reviewed", { path, blob_sha: shaFor(path), reviewed: box.checked }), { method: "POST" });
       });
     }
 
     wrapper.classList.toggle("collapsed", collapsed.has(path));
+    wrapper.classList.toggle("is-reviewed", currentReview[path] === "reviewed");
   }
   saveCollapsed();
   refreshToggleAll();
+  applyHideReviewed();
+}
+
+// Late in a review most files are ticked off; hiding them leaves just the work.
+function applyHideReviewed() {
+  const on = $hideReviewed.checked;
+  document.body.classList.toggle("hide-reviewed", on);
+  const hidden = on ? $diff.querySelectorAll(".d2h-file-wrapper.is-reviewed").length : 0;
+  $hideReviewed.parentElement.title = hidden ? `${hidden} reviewed files hidden` : "";
 }
 
 function shaFor(path) { return shas[path] || "worktree"; }

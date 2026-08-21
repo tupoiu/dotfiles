@@ -35,6 +35,22 @@ class Limits(BaseModel):
     max_inline_files: int = 300
 
 
+class Noise(BaseModel):
+    """Files that are real changes but almost never worth reading."""
+
+    # fnmatch patterns, matched against the path as git reports it.
+    collapse_by_default: list[str] = Field(
+        default_factory=lambda: [
+            "*.lock",
+            "*.sum",
+            "**/generated/**",
+            "**/*_pb2.py",
+            "**/*.pb.go",
+            "**/__snapshots__/**",
+        ]
+    )
+
+
 class Tools(BaseModel):
     difft_path: str | None = None
 
@@ -46,6 +62,7 @@ class DiffwebConfig(BaseModel):
     server: Server = Field(default_factory=Server)
     features: Features = Field(default_factory=Features)
     limits: Limits = Field(default_factory=Limits)
+    noise: Noise = Field(default_factory=Noise)
     tools: Tools = Field(default_factory=Tools)
     state_db: str = "~/.local/state/diffweb/state.db"
 

@@ -17,7 +17,7 @@ import yaml
 from fastapi.testclient import TestClient
 
 from diffweb import gitio
-from diffweb.config import DiffwebConfig, load_config
+from diffweb.config import DiffwebConfig, Noise, load_config
 from diffweb.gitio import WORKTREE
 from diffweb.state import State
 
@@ -433,3 +433,61 @@ def test_structural_renders(client: TestClient, config: DiffwebConfig, tmp_path:
     body = client.get(f"/api/w/{wid}/diff", params={"renderer": "structural"}).json()
     assert body["renderer"] == "structural"
     assert "c.txt" in body["html"]
+
+
+# --- noise control --------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "path,noisy",
+    [
+        ("Cargo.lock", True),
+        ("uv.lock", True),
+        ("go.sum", True),
+        ("projects/svc/Cargo.lock", True),
+        ("api/generated/client.ts", True),
+        ("proto/thing_pb2.py", True),
+        ("api/thing.pb.go", True),
+        ("tests/__snapshots__/a.snap", True),
+        ("src/lib.rs", False),
+        ("locked.rs", False),
+        ("docs/generated-by-hand.md", False),
+    ],
+)
+def test_is_noisy(path: str, noisy: bool) -> None:
+    assert gitio.is_noisy(path, Noise().collapse_by_default) is noisy
+
+
+def test_noise_patterns_are_configurable() -> None:
+    assert gitio.is_noisy("src/lib.rs", ["*.rs"]) is True
+    assert gitio.is_noisy("Cargo.lock", []) is False
+
+
+def test_diff_endpoint_flags_noisy_files(
+    client: TestClient, config: DiffwebConfig, world: dict[str, Path], tmp_path: Path
+) -> None:
+    commit(world["repo"], "deps.lock", "pinned\n", "add a lockfile")
+    wid = wt_id(config, "proj")
+    files = {f["path"]: f for f in client.get(f"/api/w/{wid}/diff").json()["files"]}
+    assert files["deps.lock"]["noisy"] is True
+    assert files["a.txt"]["noisy"] is False
+
+
+def test_noise_list_can_be_emptied(
+    client: TestClient, config: DiffwebConfig, world: dict[str, Path], tmp_path: Path
+) -> None:
+    commit(world["repo"], "deps.lock", "pinned\n", "add a lockfile")
+    p = tmp_path / "diffweb.yaml"
+    data = yaml.safe_load(p.read_text())
+    data["noise"] = {"collapse_by_default": []}
+    p.write_text(yaml.safe_dump(data))
+    from diffweb import app as app_module
+
+    app_module.reset_for_tests()
+    wid = wt_id(config, "proj")
+    files = {f["path"]: f for f in client.get(f"/api/w/{wid}/diff").json()["files"]}
+    assert files["deps.lock"]["noisy"] is False
+
+
+def test_hide_reviewed_control_is_present(client: TestClient, config: DiffwebConfig) -> None:
+    assert 'id="hide-reviewed"' in client.get(f"/w/{wt_id(config, 'proj')}").text
