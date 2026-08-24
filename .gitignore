@@ -9,8 +9,6 @@ wheels/
 # Virtual environments
 .venv
 
-.jj_checkpoints.jsonl
-
 # diffweb vendored browser libs (poe fetch-diffweb-assets)
 diffweb/static/vendor/*
 !diffweb/static/vendor/.gitkeep

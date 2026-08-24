@@ -6,7 +6,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 sudo apt install -y build-essential
 sudo apt install -y mold clang
 
-sudo apt install -y jq  # used by claude-statusline / claude-jj-checkpoint helpers
+sudo apt install -y jq  # used by claude-statusline helper
 sudo apt install -y bubblewrap  # sandbox backend Claude Code shells out to on Linux
 
 cargo install cargo-binstall

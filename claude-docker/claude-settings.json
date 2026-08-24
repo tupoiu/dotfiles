@@ -11,17 +11,5 @@
       "Bash(jj status*)",
       "Bash(jj show*)"
     ]
-  },
-  "hooks": {
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "claude-jj-checkpoint"
-          }
-        ]
-      }
-    ]
   }
 }
