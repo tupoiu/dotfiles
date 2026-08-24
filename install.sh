@@ -52,6 +52,10 @@ for f in fish/functions/*.fish; do
     ln -sf $(realpath $f) ~/.config/fish/functions/$(basename $f)
 done
 
+# Zellij config
+mkdir -p ~/.config/zellij
+cp $(realpath zellij/config.kdl) ~/.config/zellij/config.kdl
+
 # Bash helpers
 mkdir -p ~/.helpers
 for f in bash-helpers/*.sh; do
