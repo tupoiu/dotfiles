@@ -75,15 +75,23 @@ def find_worktree(wt_id: str, config: DiffwebConfig) -> Worktree:
 _diff_cache: dict[tuple[str, str, str], str] = {}
 
 
-def cached_diff(path: str, start: str, end: str) -> str:
+def cached_diff(path: str, start: str, end: str, max_cacheable: int) -> str:
+    """Diff text, memoised while both ends name commits.
+
+    Oversized diffs are computed but not kept: those are the ones the page
+    loads file-by-file anyway, so caching them would pin megabytes per range.
+    """
     if end == WORKTREE:
         return gitio.diff_text(path, start, end)
     key = (path, start, end)
-    if key not in _diff_cache:
+    if key in _diff_cache:
+        return _diff_cache[key]
+    text = gitio.diff_text(path, start, end)
+    if len(text) <= max_cacheable:
         if len(_diff_cache) > 32:
             _diff_cache.clear()
-        _diff_cache[key] = gitio.diff_text(path, start, end)
-    return _diff_cache[key]
+        _diff_cache[key] = text
+    return text
 
 
 def _range(wt: Worktree, base: str, start: str | None, end: str | None) -> tuple[str, str]:
@@ -205,8 +213,20 @@ def api_diff(
         html = Ansi2HTMLConverter(inline=True, dark_bg=True).convert(ansi, full=False)
         return {"renderer": "structural", "html": html, "files": stats, "review": review, "shas": shas}
 
-    size = gitio.diff_size_bytes(wt.path, s, e) if not files else 0
-    lazy = not files and (size > config.limits.max_inline_diff_bytes or len(stats) > config.limits.max_inline_files)
+    if files:
+        diff, lazy = gitio.diff_text(wt.path, s, e, files), False
+    else:
+        # One `git diff`. Sizing it with a second, identical `git diff` whose
+        # output was thrown away doubled the most expensive stage of the
+        # request, and saved no memory either - the subprocess buffers the
+        # whole output regardless.
+        diff = cached_diff(wt.path, s, e, config.limits.max_inline_diff_bytes)
+        lazy = (
+            len(diff.encode()) > config.limits.max_inline_diff_bytes
+            or len(stats) > config.limits.max_inline_files
+        )
+        if lazy:
+            diff = ""
     return {
         "renderer": "line",
         "start": s,
@@ -216,7 +236,7 @@ def api_diff(
         "review": review,
         "shas": shas,
         "lazy": lazy,
-        "diff": "" if lazy else cached_diff(wt.path, s, e) if not files else gitio.diff_text(wt.path, s, e, files),
+        "diff": diff,
     }
 
 

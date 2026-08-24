@@ -823,3 +823,40 @@ def test_favicon_ico_is_answered_not_404(client: TestClient) -> None:
     r = client.get("/favicon.ico", follow_redirects=False)
     assert r.status_code == 301
     assert r.headers["location"] == "/static/favicon.svg"
+
+
+def test_diff_endpoint_runs_git_diff_once(
+    client: TestClient, config: DiffwebConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sizing the diff used to cost a second, identical `git diff`."""
+    from diffweb import app as app_module
+
+    app_module.reset_for_tests()
+    calls: list[tuple] = []
+    real = gitio.diff_text
+
+    def counted(*args, **kwargs):
+        calls.append(args)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(gitio, "diff_text", counted)
+    assert client.get(f"/api/w/{wt_id(config, 'proj')}/diff").status_code == 200
+    assert len(calls) == 1, f"expected one git diff, got {len(calls)}"
+
+
+def test_oversized_diffs_are_not_cached(
+    client: TestClient, config: DiffwebConfig, world: dict[str, Path], tmp_path: Path
+) -> None:
+    """A diff too big to inline must not be pinned in the cache either."""
+    p = tmp_path / "diffweb.yaml"
+    data = yaml.safe_load(p.read_text())
+    data["limits"] = {"max_inline_diff_bytes": 10}
+    p.write_text(yaml.safe_dump(data))
+    from diffweb import app as app_module
+
+    app_module.reset_for_tests()
+    wid = wt_id(config, "proj")
+    head = git(world["repo"], "rev-parse", "HEAD").strip()
+    body = client.get(f"/api/w/{wid}/diff", params={"end": head}).json()
+    assert body["lazy"] is True and body["diff"] == ""
+    assert app_module._diff_cache == {}

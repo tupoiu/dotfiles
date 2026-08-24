@@ -210,17 +210,6 @@ def numstat(path: str, start: str, end: str) -> list[dict[str, object]]:
     return rows
 
 
-def diff_size_bytes(path: str, start: str, end: str) -> int:
-    # Cheaper than materialising the diff when we only need to decide on
-    # lazy loading; git still does the work but we do not hold it in memory.
-    proc = subprocess.run(
-        ["git", "diff", "--no-color", "-M", "-C", *_diff_args(start, end)],
-        cwd=path,
-        capture_output=True,
-    )
-    return len(proc.stdout)
-
-
 def blob_shas(path: str, start: str, end: str) -> dict[str, str]:
     """Post-image blob sha per file, used to tell 'reviewed' from 'changed since'."""
     out = _try_git(path, "diff", "--raw", "-M", "-C", *_diff_args(start, end)) or ""

@@ -29,6 +29,7 @@ See `diffweb/README.md` for how to run it and `diffweb/ROADMAP.md` for ideas.
 - [x] Merge the three onto `diffweb-integrated` and serve it — 72 tests pass, all three features verified working together on :8765
 - [x] PR chips carry an age — `#4312 18w` when a PR exists, `No PR (🔄 2d)` otherwise, with the 🔄 forcing a re-check — lookups persisted in SQLite so the age survives a restart; 94 tests pass and the refresh control was driven in a browser
 - [x] Changed lines render as blocks, not alternating pairs (`diffweb/static/render-options.js`) — red test first, `-+-+` → `--++` on the real kasli `build.rs`, 98 tests pass
+- [x] Halve the diff stage: one `git diff` per request instead of two (`diffweb/app.py`) — measured 46.7ms → 22.8ms on the kasli worktree, with a test that counts the calls
 - [ ] Open-in-editor links — deliberately deferred, see ROADMAP
 - [ ] code-server + GitLens comparison — never spiked, nothing was running on this VM
 
@@ -101,6 +102,11 @@ See `diffweb/README.md` for how to run it and `diffweb/ROADMAP.md` for ideas.
 - **The core diff2html bundle runs under node**, unlike the `-ui` one, which
   needs a DOM. That makes rendering assertions cheap: feed it a diff, count the
   row classes, no browser. Worth reaching for before writing a browser test.
+- **`git diff` ran twice per request.** `diff_size_bytes` shelled out for the
+  whole diff purely to measure its length, then the response fetched the
+  identical diff again. Its comment claimed this avoided holding the diff in
+  memory, which was never true - `capture_output=True` buffers all of stdout.
+  Fetch once, measure the string, drop it if the page will load lazily.
 - **The tool now finds its own worktrees**, because `~/worktrees/*/*` matches
   `~/worktrees/dotfiles/*`. Unplanned, and the best dogfooding available.
 
