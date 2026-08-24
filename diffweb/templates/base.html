@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}diffweb{% endblock %}</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <link rel="stylesheet" href="/static/vendor/diff2html.min.css">
 <link rel="stylesheet" href="/static/vendor/highlight-light.min.css" media="(prefers-color-scheme: light)">
 <link rel="stylesheet" href="/static/vendor/highlight-dark.min.css" media="(prefers-color-scheme: dark)">
@@ -11,7 +12,7 @@
 </head>
 <body>
 <header class="topbar">
-  <a class="brand" href="/">diffweb</a>
+  <a class="brand" href="/"><img class="mark" src="/static/favicon.svg" alt="" width="14" height="14">diffweb</a>
   {% block toolbar %}{% endblock %}
 </header>
 <main>{% block content %}{% endblock %}</main>

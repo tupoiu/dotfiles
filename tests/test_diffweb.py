@@ -796,3 +796,30 @@ def test_word_level_highlighting_is_not_lost_by_the_grouping() -> None:
     )
     assert proc.returncode == 0, proc.stderr
     assert int(proc.stdout) >= 4
+
+
+# --- the diff icon --------------------------------------------------------
+
+
+def test_favicon_is_a_red_and_green_square(client: TestClient) -> None:
+    r = client.get("/static/favicon.svg")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("image/svg+xml")
+    body = r.text
+    assert "#e5484d" in body and "#2ea043" in body  # removals red, additions green
+    assert "<rect" in body and "rx=" in body        # a square, slightly rounded
+
+
+@pytest.mark.parametrize("page", ["catalog", "diff"])
+def test_pages_carry_the_icon(client: TestClient, config: DiffwebConfig, page: str) -> None:
+    url = "/" if page == "catalog" else f"/w/{wt_id(config, 'proj')}"
+    body = client.get(url).text
+    assert '<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">' in body
+    assert 'class="mark" src="/static/favicon.svg"' in body
+
+
+def test_favicon_ico_is_answered_not_404(client: TestClient) -> None:
+    """Browsers ask for /favicon.ico whatever the link tag says."""
+    r = client.get("/favicon.ico", follow_redirects=False)
+    assert r.status_code == 301
+    assert r.headers["location"] == "/static/favicon.svg"

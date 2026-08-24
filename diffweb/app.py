@@ -11,7 +11,13 @@ from typing import Any
 
 from ansi2html import Ansi2HTMLConverter
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import (
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    RedirectResponse,
+    StreamingResponse,
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -282,6 +288,11 @@ async def events(wt_id: str, config: DiffwebConfig = Depends(get_config)) -> Any
                 yield ": keepalive\n\n"
 
     return StreamingResponse(stream(), media_type="text/event-stream")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon() -> Any:
+    return RedirectResponse("/static/favicon.svg", status_code=301)
 
 
 @app.get("/healthz", response_class=PlainTextResponse)

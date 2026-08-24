@@ -147,6 +147,7 @@ page re-renders in place keeping your scroll position.
 | `gitio.py` | argv-only git wrappers, worktree discovery, ref validation |
 | `state.py` | SQLite reviewed-state and per-worktree base-ref overrides |
 | `app.py` | FastAPI routes |
+| `static/favicon.svg` | the diff mark: a rounded square, red half and green half; also the browser icon |
 | `static/`, `templates/` | the UI; `static/vendor/` is gitignored, populated by `poe fetch-diffweb-assets` |
 
 A few tests shell out to `node` with diff2html's core bundle to assert on real
