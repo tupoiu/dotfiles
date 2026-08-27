@@ -181,6 +181,12 @@ $ npm --prefix diffweb install
 $ npx playwright install --with-deps chromium   # needs sudo for the system libs
 ```
 
+**Log whether the tooling helped.** When you are done, add an entry to
+`TOOLING_ROADMAP.md` saying whether each tool you used earned its place and what
+would have saved you time. The tools are only as good as the last person's
+complaints, and the friction you just worked around is invisible to everyone
+who did not hit it.
+
 **Look at it.** Read the PNGs before you say you are done. Every visual bug in
 this project's history got through a green test suite: a refresh control drawn
 as a tofu box, changed lines rendered in the wrong order, a file that silently
@@ -219,10 +225,6 @@ are picked up on reload.
 - **The suite runs under `pytest -n 6`**, so no test may mutate shared state, and
   timing assertions must be tolerant (assert `\d+s`, not `0s`).
 
-If a test fails once and then passes, do not move on: run it twenty times
-(`for i in $(seq 1 25); do uv run pytest tests/test_diffweb.py -q | tail -1; done`).
-The one flake seen so far was a genuine threading bug in `State`, not noise.
-
 Some tests shell out to `node` with diff2html's *core* bundle, which unlike the
 `-ui` bundle needs no DOM, to assert on real rendered HTML without a browser
 (`tests/render_order.cjs`). They skip without `poe fetch-diffweb-assets`, so run
@@ -245,7 +247,7 @@ The established shape, worth following:
 5. Tests, then `poe diffweb-shot`.
 6. Update this README, `ROADMAP.md`, and `../plans/diffweb.md` - the plan's
    *Decisions / gotchas* is where a surprise goes so the next person does not
-   rediscover it.
+   rediscover it - and `TOOLING_ROADMAP.md` if the tools helped or hindered.
 
 ## Traps this project has already hit
 
@@ -278,7 +280,10 @@ The established shape, worth following:
 
 ## History and plans
 
-`ROADMAP.md` holds the ideas, including several derisked-but-unbuilt ones.
+`ROADMAP.md` holds product ideas, including several derisked-but-unbuilt ones.
+`TOOLING_ROADMAP.md` holds the same for the development tooling, written by the
+people who used it - read it before you rebuild something that already annoyed
+somebody.
 `../plans/diffweb.md` is the living plan: ticked steps with their verification,
 and a decision log of the surprises. Read the gotchas there before starting.
 

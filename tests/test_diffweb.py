@@ -871,6 +871,10 @@ def test_shot_command_exists_and_is_documented() -> None:
     readme = (root / "diffweb" / "README.md").read_text()
     for command in ("poe diffweb-test", "poe diffweb-shot", "poe fetch-diffweb-assets"):
         assert command in readme, command
+    # Feedback on the tooling has somewhere to go, and the docs point at it.
+    assert (root / "diffweb" / "TOOLING_ROADMAP.md").exists()
+    assert "TOOLING_ROADMAP.md" in readme
+    assert "TOOLING_ROADMAP.md" in (root / "diffweb" / "shot.mjs").read_text()
 
 
 def test_state_survives_concurrent_access(tmp_path: Path) -> None:

@@ -82,4 +82,6 @@ for (const scheme of ["light", "dark"]) {
 
 await browser.close();
 console.log(problems ? `\n${problems} page error(s) - look at them` : "\nno page errors");
+// Prompt at the point of use: nobody remembers the friction an hour later.
+console.log("read the PNGs, then log how this tool did in diffweb/TOOLING_ROADMAP.md");
 process.exit(problems ? 1 : 0);
