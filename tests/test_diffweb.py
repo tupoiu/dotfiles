@@ -860,3 +860,14 @@ def test_oversized_diffs_are_not_cached(
     body = client.get(f"/api/w/{wid}/diff", params={"end": head}).json()
     assert body["lazy"] is True and body["diff"] == ""
     assert app_module._diff_cache == {}
+
+
+def test_shot_command_exists_and_is_documented() -> None:
+    """The screenshot step is a required part of handing work back, so the
+    command it names must actually be there."""
+    root = Path(__file__).parent.parent
+    assert (root / "diffweb" / "shot.mjs").exists()
+    assert "diffweb-shot" in (root / "pyproject.toml").read_text()
+    readme = (root / "diffweb" / "README.md").read_text()
+    for command in ("poe diffweb-test", "poe diffweb-shot", "poe fetch-diffweb-assets"):
+        assert command in readme, command

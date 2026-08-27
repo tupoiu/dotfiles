@@ -12,3 +12,7 @@ wheels/
 # diffweb vendored browser libs (poe fetch-diffweb-assets)
 diffweb/static/vendor/*
 !diffweb/static/vendor/.gitkeep
+
+# diffweb dev tooling (playwright for diffweb/shot.mjs)
+diffweb/node_modules/
+diffweb/package-lock.json

@@ -148,15 +148,129 @@ page re-renders in place keeping your scroll position.
 | `state.py` | SQLite reviewed-state and per-worktree base-ref overrides |
 | `app.py` | FastAPI routes |
 | `static/favicon.svg` | the diff mark: a rounded square, red half and green half; also the browser icon |
+| `static/render-options.js` | the diff2html options the page renders with, shared with the tests |
 | `static/`, `templates/` | the UI; `static/vendor/` is gitignored, populated by `poe fetch-diffweb-assets` |
+| `shot.mjs` | screenshots the running app (see below) |
 
-A few tests shell out to `node` with diff2html's core bundle to assert on real
-rendered HTML without a browser; they skip if node or the vendored bundle is
-missing, so run `poe fetch-diffweb-assets` first to get full coverage.
+# Working on diffweb
 
-Tests are in `tests/test_diffweb.py` and build a throwaway git repo, a linked
-worktree and a bare origin under `tmp_path`. They never read your real repos and
-pass on a machine with no `~/code`.
+## Getting feedback
+
+Four commands. The last one is not optional - see *Look at it* below.
+
+```console
+$ uv sync && poe fetch-diffweb-assets   # once per checkout
+$ poe diffweb-test                      # ~2s, fully isolated
+$ poe diffweb                           # serve on 127.0.0.1:8765
+$ poe diffweb-shot                      # screenshot what is running, then read the PNGs
+```
+
+`poe diffweb-shot` drives a real browser over the catalog and the first diff
+page in both colour schemes, writes PNGs to `/tmp/diffweb-shots`, prints every
+console error, failed request and 4xx it saw, and exits non-zero if there were
+any. Point it somewhere else with `--port`, `--out`, or explicit paths:
+
+```console
+$ poe diffweb-shot -- --port 8766 /profiles
+```
+
+It needs Playwright, which is dev-only tooling and not part of `uv sync`:
+
+```console
+$ npm --prefix diffweb install
+$ npx playwright install --with-deps chromium   # needs sudo for the system libs
+```
+
+**Look at it.** Read the PNGs before you say you are done. Every visual bug in
+this project's history got through a green test suite: a refresh control drawn
+as a tofu box, changed lines rendered in the wrong order, a file that silently
+never appeared in the diff. The screenshot is the only step that catches those.
+Use the full `chromium` build, not `chrome-headless-shell` - `shot.mjs` already
+does, because the shell renders some glyphs differently from a real browser.
+
+## Running a second instance
+
+Each feature tends to live on its own worktree, hosted on its own port, so point
+`$DIFFWEB_CONFIG` at a throwaway config rather than editing your real one:
+
+```console
+$ cat > /tmp/mine.yaml <<'YAML'
+roots: ["~/code.*"]
+server: {host: 127.0.0.1, port: 8766}
+features: {live_reload: false, pr_links: false}
+state_db: "/tmp/mine.db"
+YAML
+$ DIFFWEB_CONFIG=/tmp/mine.yaml uv run python -m diffweb
+```
+
+Python changes need a restart (or use `poe diffweb-dev`); templates, CSS and JS
+are picked up on reload.
+
+## Tests
+
+`tests/test_diffweb.py`. Two rules, both load-bearing:
+
+- **Nothing may touch the developer's real repos or home.** The `world` fixture
+  builds a temp git repo, a linked worktree and a bare origin under `tmp_path`;
+  the `config` fixture writes a YAML pointing `roots`, `state_db` and any other
+  path at `tmp_path` and sets `$DIFFWEB_CONFIG`. When you add a config option
+  that writes anywhere, add it to that fixture - a profile log once leaked into
+  `~/.local/state` precisely because it was missed.
+- **The suite runs under `pytest -n 6`**, so no test may mutate shared state, and
+  timing assertions must be tolerant (assert `\d+s`, not `0s`).
+
+Some tests shell out to `node` with diff2html's *core* bundle, which unlike the
+`-ui` bundle needs no DOM, to assert on real rendered HTML without a browser
+(`tests/render_order.cjs`). They skip without `poe fetch-diffweb-assets`, so run
+it or you will think you have more coverage than you do.
+
+Call `app.reset_for_tests()` after rewriting the config mid-test; it drops the
+cached config, state and diff cache.
+
+## Adding a feature
+
+The established shape, worth following:
+
+1. A flag in `Features` (`config.py`), defaulting on unless it costs something -
+   network, an external binary - in which case default off.
+2. Server work in `gitio.py` (argv lists, never a shell string; every
+   user-supplied ref through `resolve_ref`, which rejects anything option-like).
+3. Route in `app.py`; the handler degrades rather than 500s.
+4. UI in `templates/` + `static/`, reusing the CSS variables in `app.css` so it
+   works in both themes.
+5. Tests, then `poe diffweb-shot`.
+6. Update this README, `ROADMAP.md`, and `../plans/diffweb.md` - the plan's
+   *Decisions / gotchas* is where a surprise goes so the next person does not
+   rediscover it.
+
+## Traps this project has already hit
+
+- **diff2html re-orders what git got right.** `matching: "lines"` pairs each
+  deletion with an insertion, rendering `-,+,-,+` where git emitted `-,-,+,+`.
+  Fixed in `render-options.js`; do not "restore" it for word-level highlighting,
+  which survives `matching: "none"` anyway.
+- **The dark theme is hand-written overrides against diff2html's internal class
+  names** (`app.css`). They are coupled to the vendored version - re-check them
+  when bumping it. Its selectors often carry two classes, so a one-class
+  override of yours will silently lose.
+- **`git diff` never reports untracked files**, and `git add -N` is not
+  available to us: the app promises it never writes to your repos. Untracked
+  files are rendered via `git diff --no-index` instead.
+- **Don't shell out twice for the same thing.** Sizing the diff with a second,
+  discarded `git diff` was half the cost of the most expensive request stage.
+- **Claude transcript directory names cannot be reversed** - the slug maps both
+  `/` and `.` to `-`. Match on the `cwd` recorded in each record.
+- **Inline `onclick="event.stopPropagation()"` kills event delegation.** Rows
+  navigate from their own handler, so controls inside a row need a
+  capture-phase listener.
+- **Don't rely on an emoji for a functional control**; a box with no glyph is a
+  real outcome on a bare Linux box. Use an inline SVG.
+
+## History and plans
+
+`ROADMAP.md` holds the ideas, including several derisked-but-unbuilt ones.
+`../plans/diffweb.md` is the living plan: ticked steps with their verification,
+and a decision log of the surprises. Read the gotchas there before starting.
 
 [diff2html]: https://diff2html.xyz/
 [difftastic]: https://difftastic.wilfred.me.uk/

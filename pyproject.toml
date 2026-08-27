@@ -37,6 +37,8 @@ test-claude = {cmd = "pytest tests/", executor = "uv" }
 diffweb = {cmd = "python -m diffweb", executor = "uv" }
 diffweb-dev = {cmd = "python -m diffweb --reload", executor = "uv" }
 fetch-diffweb-assets = "bash diffweb/fetch-assets.sh"
+diffweb-test = {cmd = "pytest tests/test_diffweb.py -q", executor = "uv" }
+diffweb-shot = "node diffweb/shot.mjs"
 
 [tool.uv]
 default-groups = ["dev", "diffweb"]

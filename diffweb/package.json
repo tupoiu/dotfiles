@@ -1,0 +1,6 @@
+{
+  "name": "diffweb-devtools",
+  "private": true,
+  "description": "Playwright, only for diffweb/shot.mjs. The app itself ships no JS build step.",
+  "devDependencies": { "playwright": "^1.49.0" }
+}
