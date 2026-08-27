@@ -871,3 +871,29 @@ def test_shot_command_exists_and_is_documented() -> None:
     readme = (root / "diffweb" / "README.md").read_text()
     for command in ("poe diffweb-test", "poe diffweb-shot", "poe fetch-diffweb-assets"):
         assert command in readme, command
+
+
+def test_state_survives_concurrent_access(tmp_path: Path) -> None:
+    """One sqlite connection is shared by the request pool and by background PR
+    refreshes; interleaved calls used to raise "bad parameter or other API
+    misuse" and 500 the catalog every few hundred page loads."""
+    import concurrent.futures
+
+    st = State(tmp_path / "concurrent.db")
+
+    def hammer(n: int) -> None:
+        for i in range(40):
+            st.set_base_ref(f"wt{n}", f"origin/b{i}")
+            st.base_ref(f"wt{n}")
+            st.all_base_refs()
+            st.save_pr(f"wt{n}", "feature", {"number": i}, 1.0 * i)
+            st.pr_record(f"wt{n}", "feature")
+            st.mark_reviewed(f"wt{n}", f"f{i}.txt", f"sha{i}")
+            st.reviewed(f"wt{n}")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        # .result() so an exception in any worker fails the test.
+        for future in [pool.submit(hammer, n) for n in range(8)]:
+            future.result()
+
+    assert len(st.all_base_refs()) == 8

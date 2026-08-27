@@ -219,6 +219,10 @@ are picked up on reload.
 - **The suite runs under `pytest -n 6`**, so no test may mutate shared state, and
   timing assertions must be tolerant (assert `\d+s`, not `0s`).
 
+If a test fails once and then passes, do not move on: run it twenty times
+(`for i in $(seq 1 25); do uv run pytest tests/test_diffweb.py -q | tail -1; done`).
+The one flake seen so far was a genuine threading bug in `State`, not noise.
+
 Some tests shell out to `node` with diff2html's *core* bundle, which unlike the
 `-ui` bundle needs no DOM, to assert on real rendered HTML without a browser
 (`tests/render_order.cjs`). They skip without `poe fetch-diffweb-assets`, so run
@@ -260,6 +264,12 @@ The established shape, worth following:
   discarded `git diff` was half the cost of the most expensive request stage.
 - **Claude transcript directory names cannot be reversed** - the slug maps both
   `/` and `.` to `-`. Match on the `cwd` recorded in each record.
+- **The `State` sqlite connection is shared across threads.** The catalog looks
+  PRs up in a pool of eight and refreshes them in background threads. sqlite3
+  connections are not safe for concurrent use even with
+  `check_same_thread=False`, so *every* `State` method takes the lock, reads
+  included. Dropping the lock from a read shows up as a rare
+  `InterfaceError: bad parameter or other API misuse`, not as an obvious bug.
 - **Inline `onclick="event.stopPropagation()"` kills event delegation.** Rows
   navigate from their own handler, so controls inside a row need a
   capture-phase listener.

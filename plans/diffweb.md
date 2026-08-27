@@ -107,6 +107,11 @@ See `diffweb/README.md` for how to run it and `diffweb/ROADMAP.md` for ideas.
   identical diff again. Its comment claimed this avoided holding the diff in
   memory, which was never true - `capture_output=True` buffers all of stdout.
   Fetch once, measure the string, drop it if the page will load lazily.
+- **A once-in-twenty flaky test was a real concurrency bug.** `State` shares one
+  sqlite connection between the eight-thread PR pool and background refreshes,
+  but only writes took the lock. Unguarded concurrent reads surface as
+  `InterfaceError: bad parameter or other API misuse` - rare enough to look like
+  noise, and a 500 on the catalog when it hits. Every method now locks.
 - **The tool now finds its own worktrees**, because `~/worktrees/*/*` matches
   `~/worktrees/dotfiles/*`. Unplanned, and the best dogfooding available.
 
