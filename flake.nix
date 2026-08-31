@@ -19,7 +19,13 @@
   outputs = { self, nixpkgs, home-manager }:
     let
       system = "x86_64-linux";
-      pkgs = import nixpkgs { inherit system; };
+      pkgs = import nixpkgs {
+        inherit system;
+        # nixpkgs refuses unfree packages by default. Allow exactly the ones we
+        # want rather than opening the gate entirely.
+        config.allowUnfreePredicate = pkg:
+          builtins.elem (nixpkgs.lib.getName pkg) [ "claude-code" ];
+      };
 
       # One machine = one call to this. Everything shared lives in ./home.nix;
       # only the genuinely per-machine facts are arguments.
@@ -63,6 +69,7 @@
           jq
 
           bun
+          claude-code
 
           # from install.sh / the Dockerfile
           uv
@@ -90,6 +97,11 @@
         fakeRootCommands = ''
           mkdir -p ./home/node ./workspace
           chown -R 1000:1000 ./home/node ./workspace
+
+          # No base image means no /tmp. 1777 = world-writable with the sticky
+          # bit, so anyone can create files but only delete their own.
+          mkdir -p ./tmp ./var/tmp
+          chmod 1777 ./tmp ./var/tmp
         '';
 
         config = {
@@ -102,6 +114,10 @@
             "SHELL=/bin/fish"
             "EDITOR=vim"
             "DEVCONTAINER=true"
+            # The claude-code wrapper sets this to 1 via --set-default, which
+            # would auto-update plugins out from under the pinned Superpowers
+            # commit. Overridable precisely because it's a default, not a --set.
+            "FORCE_AUTOUPDATE_PLUGINS=0"
           ];
         };
       };
