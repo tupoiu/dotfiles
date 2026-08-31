@@ -2,6 +2,7 @@ function claude-local --description 'Run claude-default container with Pro login
     podman run -it --rm --userns=keep-id \
         -v ~/.claude:/home/node/.claude \
         -v ~/.claude.json:/home/node/.claude.json \
+	-v ~/.pi:/home/node/.pi \
         -v (pwd):/workspace \
         -v ~/.config/jj:/home/node/.config/jj \
         -v ~/.helpers:/home/node/.helpers:ro \
