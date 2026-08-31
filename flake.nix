@@ -62,20 +62,46 @@
           fzf
           jq
 
+          bun
+
+          # from install.sh / the Dockerfile
+          uv
+          poethepoet
+          delta
+          gh
+          less
+          procps
+
           # /etc/passwd + /etc/group. Without this most tools error on
-          # "cannot look up current user".
-          dockerTools.fakeNss
+          # "cannot look up current user". Overridden to add `node`, since the
+          # stock version only knows root and nobody.
+          (dockerTools.fakeNss.override {
+            extraPasswdLines = [ "node:x:1000:1000:node:/home/node:/bin/fish" ];
+            extraGroupLines = [ "node:x:1000:" ];
+          })
 
           # /etc/ssl/certs — without it every HTTPS call fails.
           cacert
         ];
 
+        # Runs under fakeroot, so chown works without real privileges. This is
+        # where the Dockerfile's `mkdir -p /workspace /home/node && chown -R`
+        # ends up.
+        fakeRootCommands = ''
+          mkdir -p ./home/node ./workspace
+          chown -R 1000:1000 ./home/node ./workspace
+        '';
+
         config = {
+          User = "node";
           Cmd = [ "/bin/fish" ];
           WorkingDir = "/workspace";
           Env = [
             "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
+            "HOME=/home/node"
+            "SHELL=/bin/fish"
             "EDITOR=vim"
+            "DEVCONTAINER=true"
           ];
         };
       };
