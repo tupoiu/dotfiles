@@ -54,7 +54,7 @@ done
 
 # Zellij config
 mkdir -p ~/.config/zellij
-cp $(realpath zellij/config.kdl) ~/.config/zellij/config.kdl
+# cp $(realpath zellij/config.kdl) ~/.config/zellij/config.kdl
 
 # Bash helpers
 mkdir -p ~/.helpers

@@ -78,6 +78,7 @@
           gh
           less
           procps
+          which
 
           # Editor
           neovim
