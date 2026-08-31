@@ -95,7 +95,10 @@
         # where the Dockerfile's `mkdir -p /workspace /home/node && chown -R`
         # ends up.
         fakeRootCommands = ''
-          mkdir -p ./home/node ./workspace
+          # Pre-create every directory podman will mount into. Otherwise podman
+          # creates the missing parents itself, owned by root, and the container
+          # user can't write alongside them.
+          mkdir -p ./home/node/.config/fish ./home/node/.claude ./workspace
           chown -R 1000:1000 ./home/node ./workspace
 
           # No base image means no /tmp. 1777 = world-writable with the sticky
