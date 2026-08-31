@@ -79,6 +79,9 @@
           less
           procps
 
+          # Editor
+          neovim
+
           # /etc/passwd + /etc/group. Without this most tools error on
           # "cannot look up current user". Overridden to add `node`, since the
           # stock version only knows root and nobody.
@@ -115,7 +118,7 @@
             "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
             "HOME=/home/node"
             "SHELL=/bin/fish"
-            "EDITOR=vim"
+            "EDITOR=nvim"
             "DEVCONTAINER=true"
             # The claude-code wrapper sets this to 1 via --set-default, which
             # would auto-update plugins out from under the pinned Superpowers
