@@ -80,6 +80,33 @@
           procps
           which
 
+          # coreutils covers less than people expect — sed/grep/awk/find/tar are
+          # all separate packages. This is roughly "what a distro gave you free".
+          gnused
+          gnugrep
+          gawk
+          findutils
+          diffutils
+          gnutar
+          gzip
+          curl
+          # git/jj shell out to the ssh binary; the remote here is ssh://
+          openssh
+
+          # Nicer find. Not a drop-in for `find`, so findutils stays above.
+          fd
+
+          python3
+          unzip
+          patch
+
+          # /usr/bin/env, for `#!/usr/bin/env python3` style shebangs.
+          dockerTools.usrBinEnv
+
+          # Locale data. Without it LANG is unset and Unicode-aware sorting and
+          # output misbehave, often quietly.
+          glibcLocales
+
           # Editor
           neovim
 
@@ -121,6 +148,8 @@
             "SHELL=/bin/fish"
             "EDITOR=nvim"
             "DEVCONTAINER=true"
+            "LANG=C.UTF-8"
+            "LC_ALL=C.UTF-8"
             # The claude-code wrapper sets this to 1 via --set-default, which
             # would auto-update plugins out from under the pinned Superpowers
             # commit. Overridable precisely because it's a default, not a --set.
