@@ -47,10 +47,7 @@ touch ~/.claude.json
 cp $(realpath claude-docker/claude-settings.json) ~/.claude/settings.json
 
 # Fish functions
-mkdir -p ~/.config/fish/functions
-for f in fish/functions/*.fish; do
-    ln -sf $(realpath $f) ~/.config/fish/functions/$(basename $f)
-done
+bash $(dirname $(realpath $0))/install_fish_functions.sh
 
 # Zellij config
 mkdir -p ~/.config/zellij
