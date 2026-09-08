@@ -18,6 +18,12 @@ from .config import DiffwebConfig
 # The sentinel end-of-range meaning "whatever is on disk right now".
 WORKTREE = "WORKTREE"
 
+# The sentinel end-of-range meaning "whatever is staged right now".
+INDEX = "INDEX"
+
+# The branch's upstream, as git spells it. Start of the "unpushed" range.
+UPSTREAM = "@{upstream}"
+
 # Refs reach us from query strings. Anything outside this alphabet - and
 # anything that could be read as an option - never makes it to argv.
 _REF_RE = re.compile(r"^[A-Za-z0-9._/~^{}@+-]+$")
@@ -55,8 +61,8 @@ def validate_ref(ref: str) -> str:
 
 def resolve_ref(path: str | os.PathLike[str], ref: str) -> str:
     """Validate a caller-supplied ref and return the commit sha it names."""
-    if ref == WORKTREE:
-        return WORKTREE
+    if ref in (WORKTREE, INDEX):
+        return ref
     validate_ref(ref)
     out = _try_git(path, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}")
     if not out:
@@ -155,7 +161,7 @@ def merge_base(path: str, base: str, head: str = "HEAD") -> str:
 
 def commits(path: str, start: str, end: str = "HEAD", limit: int = 500) -> list[dict[str, str]]:
     start_sha = resolve_ref(path, start)
-    end_sha = resolve_ref(path, "HEAD" if end == WORKTREE else end)
+    end_sha = resolve_ref(path, "HEAD" if end in (WORKTREE, INDEX) else end)
     fmt = "%H%x1f%h%x1f%an%x1f%ar%x1f%s"
     out = _try_git(path, "log", f"--max-count={limit}", f"--format={fmt}", f"{start_sha}..{end_sha}") or ""
     rows = []
@@ -168,6 +174,10 @@ def commits(path: str, start: str, end: str = "HEAD", limit: int = 500) -> list[
 def _diff_args(start: str, end: str) -> list[str]:
     # Ending at the worktree means a one-sided diff, which git reads as
     # "start vs the files on disk" and so includes staged and unstaged work.
+    # Ending at the index is the same diff with `--cached`, so it shows only
+    # what is staged.
+    if end == INDEX:
+        return ["--cached", start]
     return [start] if end == WORKTREE else [start, end]
 
 

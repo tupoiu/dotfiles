@@ -65,6 +65,17 @@ remembered per worktree.
 defaults to the working tree, so by default you see everything you have done on
 this branch including uncommitted edits. Both ends are reflected in the URL.
 
+**Range shortcuts.** A row of five buttons between the branch name and the
+base/from/to controls sets the whole range in one click: *working tree*
+(`HEAD` → what is on disk, i.e. everything uncommitted), *whole branch* (merge
+base → working tree, the default), *last commit* (`HEAD~1` → `HEAD`, the commit
+you just made and nothing else), *unpushed* (`@{upstream}` → `HEAD`, the commits
+the remote has not got; a branch with no upstream says so rather than failing on
+an unknown ref), and *staged* (merge base → the index, which is
+`git diff --cached`). Whichever one matches the current `from`/`to` lights
+up, and picking a range by hand updates it. The index is a sentinel end of a
+range like the working tree is, and is never cached.
+
 **Reviewed state.** Tick a file to collapse it. The tick is stored against that
 file's current blob sha, so when the file changes afterwards it reopens badged
 "changed since you reviewed". State lives in SQLite, keyed by worktree.
@@ -275,6 +286,11 @@ The established shape, worth following:
 - **Inline `onclick="event.stopPropagation()"` kills event delegation.** Rows
   navigate from their own handler, so controls inside a row need a
   capture-phase listener.
+- **The browser will happily run last week's `worktree.js`.** `StaticFiles`
+  sends no `Cache-Control`, so the browser picks its own freshness lifetime and
+  may not revalidate at all: the new HTML arrives, the old JS runs, and a new
+  control renders but does nothing. Every `/static` URL therefore goes through
+  the `asset()` template global, which stamps it with the file's mtime.
 - **Don't rely on an emoji for a functional control**; a box with no glyph is a
   real outcome on a bare Linux box. Use an inline SVG.
 

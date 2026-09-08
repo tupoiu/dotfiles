@@ -11,6 +11,16 @@ Scratchpad. Add anything, however half-formed - nothing here is committed to.
 
 ## Next up
 
+- In the diff page for diffweb (e.g. the page for a given worktree), I often find
+  that I want to see 1. just the diff of the current working tree, 2. just the diff
+  of the working tree against the merge base with origin/master, 3. just the diff of
+  the staging area against master.  Add shortcuts for each of these, making a line
+  between the branch name and the base/from/to part of the UI, and put the icons
+  there. Add this task verbatim to the roadmap, and then complete it. If your testing
+  infrastructure doesn't work, STOP and escalate immediately.
+  Also add one for the last commit (add that to the roadmap entry, too)
+  Add an button in the list next to "last commit, staged, ..." for "unpushed changes"
+
 - ~~Make the "chips" column in the homepage also show when the PR was first made if
   it exists, or if theres "No PR ({refresh emoji} 1m)" or "No PR ({refresh} 2d)".~~
   Done - the 🔄 is clickable and re-asks gh.

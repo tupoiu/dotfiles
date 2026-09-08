@@ -23,7 +23,7 @@ from fastapi.templating import Jinja2Templates
 
 from . import forge, gitio
 from .config import DiffwebConfig, load_config
-from .gitio import WORKTREE, Worktree
+from .gitio import INDEX, UPSTREAM, WORKTREE, Worktree
 from .state import State
 
 HERE = Path(__file__).parent
@@ -38,6 +38,23 @@ def _bad_ref_handler(request: Request, exc: Exception) -> JSONResponse:
     return JSONResponse({"error": str(exc)}, status_code=400)
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 templates = Jinja2Templates(directory=str(HERE / "templates"))
+
+
+def asset(path: str) -> str:
+    """A /static URL stamped with the file's mtime.
+
+    Without this the browser keeps serving a stale `worktree.js` after an edit:
+    StaticFiles sends no Cache-Control, so the browser is free to guess a
+    freshness lifetime and never revalidate. Editing a file changes the URL.
+    """
+    try:
+        stamp = int((HERE / "static" / path).stat().st_mtime)
+    except OSError:
+        return f"/static/{path}"
+    return f"/static/{path}?v={stamp}"
+
+
+templates.env.globals["asset"] = asset
 
 _config: DiffwebConfig | None = None
 _state: State | None = None
@@ -81,7 +98,8 @@ def cached_diff(path: str, start: str, end: str, max_cacheable: int) -> str:
     Oversized diffs are computed but not kept: those are the ones the page
     loads file-by-file anyway, so caching them would pin megabytes per range.
     """
-    if end == WORKTREE:
+    if end in (WORKTREE, INDEX):
+        # Both ends move under our feet, so neither is safe to memoise.
         return gitio.diff_text(path, start, end)
     key = (path, start, end)
     if key in _diff_cache:
@@ -95,7 +113,16 @@ def cached_diff(path: str, start: str, end: str, max_cacheable: int) -> str:
 
 
 def _range(wt: Worktree, base: str, start: str | None, end: str | None) -> tuple[str, str]:
-    resolved_start = gitio.resolve_ref(wt.path, start) if start else gitio.merge_base(wt.path, base)
+    # Only the end of a range may be the worktree or the index.
+    if start in (WORKTREE, INDEX):
+        raise ValueError(f"{start} is not a valid start of a range")
+    try:
+        resolved_start = gitio.resolve_ref(wt.path, start) if start else gitio.merge_base(wt.path, base)
+    except gitio.GitError:
+        # An unset upstream is an ordinary state of a local branch, not a typo.
+        if start == UPSTREAM:
+            raise ValueError(f"{wt.branch} has no upstream branch, so nothing is pushed") from None
+        raise
     resolved_end = gitio.resolve_ref(wt.path, end) if end else WORKTREE
     return resolved_start, resolved_end
 

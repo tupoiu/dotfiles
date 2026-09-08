@@ -21,7 +21,7 @@ from fastapi.testclient import TestClient
 
 from diffweb import forge, gitio
 from diffweb.config import DiffwebConfig, Noise, load_config
-from diffweb.gitio import WORKTREE
+from diffweb.gitio import INDEX, UPSTREAM, WORKTREE
 from diffweb.state import State
 
 GIT_ENV = {
@@ -242,6 +242,66 @@ def test_diff_between_commits_excludes_uncommitted(world: dict[str, Path]) -> No
     head = gitio.resolve_ref(repo, "HEAD")
     paths = {r["path"] for r in gitio.numstat(repo, mb, head)}
     assert paths == {"a.txt", "c.txt"}
+
+
+def test_diff_to_index_shows_only_staged(world: dict[str, Path]) -> None:
+    """The staged shortcut: what is in the index, and nothing merely on disk."""
+    repo = str(world["repo"])
+    (world["repo"] / "d.txt").write_text("staged\n")
+    git(world["repo"], "add", "d.txt")
+    mb = gitio.merge_base(repo, "origin/master")
+
+    paths = {r["path"] for r in gitio.numstat(repo, mb, INDEX)}
+    assert paths == {"a.txt", "c.txt", "d.txt"}   # b.txt is unstaged, so absent
+    text = gitio.diff_text(repo, mb, INDEX)
+    assert "staged" in text and "uncommitted" not in text
+    assert set(gitio.blob_shas(repo, mb, INDEX)) == paths
+
+
+def test_index_is_only_ever_an_end(world: dict[str, Path], client: TestClient) -> None:
+    repo = str(world["repo"])
+    assert gitio.resolve_ref(repo, INDEX) == INDEX
+    wt = next(w for w in gitio.discover(load_config()) if w.name == "proj")
+    assert client.get(f"/api/w/{wt.id}/diff", params={"start": INDEX}).status_code == 400
+
+
+def test_api_diff_accepts_the_index_as_an_end(world: dict[str, Path], client: TestClient) -> None:
+    repo = world["repo"]
+    (repo / "d.txt").write_text("staged\n")
+    git(repo, "add", "d.txt")
+    wt = next(w for w in gitio.discover(load_config()) if w.name == "proj")
+    data = client.get(f"/api/w/{wt.id}/diff", params={"end": INDEX}).json()
+    assert {f["path"] for f in data["files"]} == {"a.txt", "c.txt", "d.txt"}
+    assert data["end"] == INDEX
+
+
+def test_api_diff_of_the_last_commit_only(world: dict[str, Path], client: TestClient) -> None:
+    """The last-commit shortcut: HEAD~1..HEAD, with nothing uncommitted in it."""
+    wt = next(w for w in gitio.discover(load_config()) if w.name == "proj")
+    data = client.get(f"/api/w/{wt.id}/diff", params={"start": "HEAD~1", "end": "HEAD"}).json()
+    assert {f["path"] for f in data["files"]} == {"c.txt"}   # the "add c" commit
+    assert "uncommitted" not in data["diff"]
+
+
+def test_api_diff_of_unpushed_commits(world: dict[str, Path], client: TestClient) -> None:
+    """The unpushed shortcut: what the upstream has not got yet."""
+    repo = world["repo"]
+    git(repo, "push", "-u", "origin", "feature")
+    commit(repo, "e.txt", "epsilon\n", "add e")     # one commit past the upstream
+    wt = next(w for w in gitio.discover(load_config()) if w.name == "proj")
+
+    data = client.get(f"/api/w/{wt.id}/diff", params={"start": UPSTREAM, "end": "HEAD"}).json()
+    assert {f["path"] for f in data["files"]} == {"e.txt"}
+
+
+def test_unpushed_without_an_upstream_explains_itself(
+    world: dict[str, Path], client: TestClient
+) -> None:
+    """A branch with no upstream is normal, so say so rather than 'unknown ref'."""
+    wt = next(w for w in gitio.discover(load_config()) if w.name == "proj")
+    r = client.get(f"/api/w/{wt.id}/diff", params={"start": UPSTREAM, "end": "HEAD"})
+    assert r.status_code == 400
+    assert "no upstream" in r.json()["error"]
 
 
 def test_numstat_counts(world: dict[str, Path]) -> None:
@@ -814,8 +874,18 @@ def test_favicon_is_a_red_and_green_square(client: TestClient) -> None:
 def test_pages_carry_the_icon(client: TestClient, config: DiffwebConfig, page: str) -> None:
     url = "/" if page == "catalog" else f"/w/{wt_id(config, 'proj')}"
     body = client.get(url).text
-    assert '<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">' in body
-    assert 'class="mark" src="/static/favicon.svg"' in body
+    assert '<link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=' in body
+    assert 'class="mark" src="/static/favicon.svg?v=' in body
+
+
+def test_static_urls_are_stamped_with_the_file_mtime(client: TestClient, config: DiffwebConfig) -> None:
+    """A stale cached worktree.js silently disables anything new in the UI."""
+    from diffweb import app as app_module
+
+    body = client.get(f"/w/{wt_id(config, 'proj')}").text
+    js = app_module.HERE / "static" / "worktree.js"
+    assert f'src="/static/worktree.js?v={int(js.stat().st_mtime)}"' in body
+    assert client.get(f"/static/worktree.js?v={int(js.stat().st_mtime)}").status_code == 200
 
 
 def test_favicon_ico_is_answered_not_404(client: TestClient) -> None:

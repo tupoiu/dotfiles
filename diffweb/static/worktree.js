@@ -14,6 +14,19 @@ const $diff = document.getElementById("diff");
 
 const MERGE_BASE = "";        // empty start means "merge base with base ref"
 const WORKTREE = "";          // empty end means "working tree"
+const HEAD = "HEAD";          // the last commit
+const BEFORE_HEAD = "HEAD~1"; // the commit before it
+const UPSTREAM = "@{upstream}";  // the last commit the remote has
+const INDEX = "INDEX";        // end at the staging area
+
+// The three ranges worth a one-click shortcut, as {start, end} pairs.
+const SCOPES = {
+  working: { start: HEAD, end: WORKTREE },
+  branch: { start: MERGE_BASE, end: WORKTREE },
+  "last-commit": { start: BEFORE_HEAD, end: HEAD },
+  unpushed: { start: UPSTREAM, end: HEAD },
+  staged: { start: MERGE_BASE, end: INDEX },
+};
 
 $sbs.checked = localStorage.getItem("diffweb.sbs") === "1";
 $sbs.addEventListener("change", () => {
@@ -123,7 +136,14 @@ async function loadCommits() {
   if (!r.ok) { status(data.error || `cannot resolve base ref "${$base.value}"`); return false; }
   const want = { start: el.dataset.start, end: el.dataset.end };
   $start.innerHTML = `<option value="">merge base with ${data.base}</option>`;
-  $end.innerHTML = `<option value="">working tree</option>`;
+  $end.innerHTML = `<option value="">working tree</option>`
+    + `<option value="${INDEX}">staging area</option>`;
+  $end.appendChild(new Option("HEAD (last commit)", HEAD));
+  // A literal HEAD option, rather than the newest sha, so the shortcut still
+  // works on a branch sitting on its own merge base with no commits listed.
+  $start.appendChild(new Option("HEAD (last commit)", HEAD));
+  $start.appendChild(new Option("HEAD~1 (before the last commit)", BEFORE_HEAD));
+  $start.appendChild(new Option("@{upstream} (last pushed commit)", UPSTREAM));
   for (const c of data.commits) {
     const label = `${c.short}  ${c.subject}  (${c.when})`;
     $start.appendChild(new Option(label, c.sha));
@@ -131,6 +151,7 @@ async function loadCommits() {
   }
   $start.value = want.start || MERGE_BASE;
   $end.value = want.end || WORKTREE;
+  syncScopes();
   el.dataset.start = el.dataset.end = "";
   status("");
   return true;
@@ -289,6 +310,27 @@ function applyHideReviewed() {
   window.diffwebKeys?.refresh();
 }
 
+// Light up whichever shortcut matches the range that is actually selected.
+const $scopes = document.getElementById("scopes");
+
+function syncScopes() {
+  for (const btn of $scopes.querySelectorAll(".scope-btn")) {
+    const want = SCOPES[btn.dataset.scope];
+    const on = $start.value === want.start && $end.value === want.end;
+    btn.setAttribute("aria-pressed", on ? "true" : "false");
+  }
+}
+
+$scopes.addEventListener("click", (e) => {
+  const btn = e.target.closest(".scope-btn");
+  if (!btn) return;
+  const want = SCOPES[btn.dataset.scope];
+  $start.value = want.start;
+  $end.value = want.end;
+  syncScopes();
+  render();
+});
+
 function shaFor(path) { return shas[path] || "worktree"; }
 
 $base.addEventListener("change", async () => {
@@ -300,8 +342,8 @@ $base.addEventListener("change", async () => {
   }
   if (await loadCommits()) render();
 });
-$start.addEventListener("change", render);
-$end.addEventListener("change", render);
+$start.addEventListener("change", () => { syncScopes(); render(); });
+$end.addEventListener("change", () => { syncScopes(); render(); });
 
 if (el.dataset.live === "1") {
   const es = new EventSource(`/events/${WT}`);

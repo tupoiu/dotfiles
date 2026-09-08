@@ -4,15 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}diffweb{% endblock %}</title>
-<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-<link rel="stylesheet" href="/static/vendor/diff2html.min.css">
-<link rel="stylesheet" href="/static/vendor/highlight-light.min.css" media="(prefers-color-scheme: light)">
-<link rel="stylesheet" href="/static/vendor/highlight-dark.min.css" media="(prefers-color-scheme: dark)">
-<link rel="stylesheet" href="/static/app.css">
+<link rel="icon" type="image/svg+xml" href="{{ asset('favicon.svg') }}">
+<link rel="stylesheet" href="{{ asset('vendor/diff2html.min.css') }}">
+<link rel="stylesheet" href="{{ asset('vendor/highlight-light.min.css') }}" media="(prefers-color-scheme: light)">
+<link rel="stylesheet" href="{{ asset('vendor/highlight-dark.min.css') }}" media="(prefers-color-scheme: dark)">
+<link rel="stylesheet" href="{{ asset('app.css') }}">
 </head>
 <body>
 <header class="topbar">
-  <a class="brand" href="/"><img class="mark" src="/static/favicon.svg" alt="" width="14" height="14">diffweb</a>
+  <a class="brand" href="/"><img class="mark" src="{{ asset('favicon.svg') }}" alt="" width="14" height="14">diffweb</a>
   {% block toolbar %}{% endblock %}
 </header>
 <main>{% block content %}{% endblock %}</main>

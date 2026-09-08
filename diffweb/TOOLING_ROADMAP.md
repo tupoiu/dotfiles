@@ -22,6 +22,37 @@ Format - one entry per session, newest first:
 
 ---
 
+## 2026-08-28 - range shortcuts (working tree / whole branch / last commit / unpushed / staged)
+
+- `poe diffweb-test` - helped. 2.7s for 109 tests, and it caught a `str`/`Path`
+  slip in my own new test within seconds of writing it. The vendored assets were
+  already present, so the silent-skip problem from the last entry did not bite.
+- `poe diffweb-shot` - helped for "are there console errors", did not help for
+  "does the new toolbar row look right". The whole-page PNG of a diffweb
+  worktree is 1440x86205, which downscales to an unreadable ribbon: the toolbar
+  I had just built was about two pixels of it. I wrote a throwaway Playwright
+  script to shoot `.topbar` in both schemes and in each of the three new states,
+  which is exactly the `--select` flag the previous session asked for.
+  **Improve:** `--select <css>` is now requested twice. Add it. A `--click <css>`
+  (or a repeatable `--step`) would have covered the rest, since what I needed to
+  see was three *states* of one element, not three pages.
+- `poe diffweb-shot -- --out DIR PATH` - actively misled me. `--out` was not
+  consumed as a flag, so the directory was treated as a page path and shot as a
+  404, and the run exited non-zero reporting "4 page errors" that were entirely
+  my own arguments. The real pages in the same run were clean.
+  **Improve:** reject an unknown or mis-parsed flag up front instead of
+  requesting it as a URL, and never report a made-up path as a page error.
+- Ad-hoc Playwright script - the `import { chromium } from 'playwright'` only
+  resolves from inside `diffweb/`, so a script in a scratch directory dies with
+  `ERR_MODULE_NOT_FOUND` and you copy it into the repo to run it.
+  **Improve:** a documented `node --experimental-...`-free way to run a one-off,
+  or just say in the README that scratch scripts belong in `diffweb/`.
+- Running a second instance - the temp-YAML dance again, plus scraping
+  `/w/<id>` out of the catalog HTML and then fetching six pages to find which
+  opaque id was the branch I wanted.
+  **Improve:** the `--port`/`--roots` flags already asked for, and let the page
+  route accept a branch or worktree *name* as well as the hash.
+
 ## 2026-08-27 - writing the contributor docs, fixing a State race
 
 - `poe diffweb-test` - helped. ~2s for 106 tests makes it cheap enough to run

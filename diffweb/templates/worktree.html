@@ -7,11 +7,59 @@
      data-start="{{ start }}"
      data-end="{{ end }}"
      data-live="{{ 1 if features.live_reload else 0 }}">
+  <div class="control-row">
   <span class="wt-name">{{ wt.name }} <span class="branch">{{ wt.branch }}</span>
     {%- if pr and pr.pr %}<a href="{{ pr.pr.url }}" target="_blank" rel="noopener"
        class="pr-chip pr-{{ pr.pr.status }}"
        title="{{ pr.pr.title }}">{{ pr.pr.label }}</a>{% if pr.pr.opened_age %}<span
        class="pr-age" title="opened {{ pr.pr.opened_age }} ago">{{ pr.pr.opened_age }}</span>{% endif %}{% endif %}</span>
+  </div>
+  <div class="control-row scopes" id="scopes">
+    <span class="scopes-label">show</span>
+    <button type="button" class="scope-btn" data-scope="working"
+            title="Working tree: everything uncommitted (staged and unstaged)">
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+        <path d="M9.2 1.8 3 8v2.8h2.8L12 4.6z" fill="none" stroke="currentColor" stroke-width="1.4"/>
+        <path d="M2 14.2h12" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      </svg>
+      <span>working tree</span>
+    </button>
+    <button type="button" class="scope-btn" data-scope="branch"
+            title="Whole branch: merge base with the base ref, up to the working tree">
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+        <path d="M4.5 3.6v8.8M4.5 6.8h4a3 3 0 0 0 3-3V3.6" fill="none" stroke="currentColor" stroke-width="1.4"/>
+        <circle cx="4.5" cy="13" r="1.6" fill="currentColor"/>
+        <circle cx="4.5" cy="3" r="1.6" fill="currentColor"/>
+        <circle cx="11.5" cy="3" r="1.6" fill="currentColor"/>
+      </svg>
+      <span>whole branch</span>
+    </button>
+    <button type="button" class="scope-btn" data-scope="last-commit"
+            title="Last commit: HEAD on its own, with nothing uncommitted">
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+        <circle cx="8" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.4"/>
+        <path d="M1.5 8h3.5M11 8h3.5" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      </svg>
+      <span>last commit</span>
+    </button>
+    <button type="button" class="scope-btn" data-scope="unpushed"
+            title="Unpushed: the commits on this branch that its upstream does not have">
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+        <path d="M8 13.2V3.4M4.6 6.8 8 3.4l3.4 3.4" fill="none" stroke="currentColor" stroke-width="1.4"/>
+        <path d="M2.5 14.2h11" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      </svg>
+      <span>unpushed</span>
+    </button>
+    <button type="button" class="scope-btn" data-scope="staged"
+            title="Staging area: what is staged, against the merge base with the base ref">
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+        <path d="M2 9.5V13h12V9.5h-3.4a2.6 2.6 0 0 1-5.2 0z" fill="none" stroke="currentColor" stroke-width="1.4"/>
+        <path d="M8 2v5.4M5.8 5.4 8 7.6l2.2-2.2" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      </svg>
+      <span>staged</span>
+    </button>
+  </div>
+  <div class="control-row">
   <label>base <input id="base" value="{{ base }}" size="16" spellcheck="false"></label>
   <label>from <select id="start"></select></label>
   <label>to <select id="end"></select></label>
@@ -24,6 +72,7 @@
   <button type="button" id="toggle-all" class="linkish">collapse all</button>
   <button type="button" id="key-help-btn" class="linkish" title="Keyboard shortcuts">?</button>
   <span id="status" class="status"></span>
+  </div>
 </div>
 {% endblock %}
 {% block content %}
@@ -31,8 +80,8 @@
 <div id="diff"></div>
 {% endblock %}
 {% block scripts %}
-<script src="/static/vendor/diff2html-ui.min.js"></script>
-<script src="/static/render-options.js"></script>
-<script src="/static/worktree.js"></script>
-<script src="/static/keys.js"></script>
+<script src="{{ asset('vendor/diff2html-ui.min.js') }}"></script>
+<script src="{{ asset('render-options.js') }}"></script>
+<script src="{{ asset('worktree.js') }}"></script>
+<script src="{{ asset('keys.js') }}"></script>
 {% endblock %}

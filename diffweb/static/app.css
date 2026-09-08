@@ -31,10 +31,26 @@ code { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
 .brand .mark { display: block; border-radius: 3px; }
 main { padding: 16px; }
 
-.controls { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.controls { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
+.control-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .controls label { color: var(--dim); display: flex; align-items: center; gap: 5px; }
 .controls .chk { cursor: pointer; }
 .wt-name { font-weight: 600; }
+
+/* Range shortcuts: the three ranges worth one click, on their own line. */
+.scopes { gap: 8px; }
+.scopes-label { color: var(--dim); }
+.scope-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  font: inherit; font-size: 12px; line-height: 1.6;
+  padding: 1px 9px; border-radius: 999px; cursor: pointer;
+  color: var(--dim); background: none; border: 1px solid var(--line);
+}
+.scope-btn:hover { color: var(--fg); border-color: var(--dim); }
+.scope-btn[aria-pressed="true"] {
+  color: var(--accent); border-color: currentColor; font-weight: 550;
+}
+.scope-btn svg { display: block; }
 .branch {
   font-family: ui-monospace, monospace; font-size: 11px; color: var(--dim);
   border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; margin-left: 6px;

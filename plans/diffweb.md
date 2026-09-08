@@ -30,10 +30,29 @@ See `diffweb/README.md` for how to run it and `diffweb/ROADMAP.md` for ideas.
 - [x] PR chips carry an age — `#4312 18w` when a PR exists, `No PR (🔄 2d)` otherwise, with the 🔄 forcing a re-check — lookups persisted in SQLite so the age survives a restart; 94 tests pass and the refresh control was driven in a browser
 - [x] Changed lines render as blocks, not alternating pairs (`diffweb/static/render-options.js`) — red test first, `-+-+` → `--++` on the real kasli `build.rs`, 98 tests pass
 - [x] Halve the diff stage: one `git diff` per request instead of two (`diffweb/app.py`) — measured 46.7ms → 22.8ms on the kasli worktree, with a test that counts the calls
+- [x] Range shortcuts — one-click *working tree* / *whole branch* / *last commit* / *unpushed* / *staged*, on their own line above base/from/to (`diffweb/templates/worktree.html`) — 113 tests pass and every state was driven in a real browser in both themes
 - [ ] Open-in-editor links — deliberately deferred, see ROADMAP
 - [ ] code-server + GitLens comparison — never spiked, nothing was running on this VM
 
 ## Decisions / gotchas
+
+- **The index is a third end of a range, not a start.** `end=INDEX` becomes
+  `git diff --cached <start>`, so it needs its own sentinel beside `WORKTREE`
+  and the same treatment everywhere: `resolve_ref` passes it through, `commits`
+  maps it to HEAD, and `cached_diff` must not memoise it - the index moves under
+  you exactly like the working tree does. `_range` rejects it as a *start*,
+  where it would silently become an empty diff.
+- **A new control that "does nothing" is usually a cached script.** The range
+  shortcuts rendered and were inert in a browser that had `worktree.js` from
+  before they existed. `/static` URLs are now mtime-stamped by `asset()` in
+  `app.py`; a stale page still needs one hard reload to pick the new HTML up.
+- **A branch with no upstream is a normal state, not bad input.** `@{upstream}`
+  is a ref like any other until it isn't: `resolve_ref` raises, and the raw
+  `unknown ref '@{upstream}'` reads as a bug in the page. `_range` turns that
+  one failure into "<branch> has no upstream branch, so nothing is pushed".
+- **The staged shortcut starts at the merge base, not at `origin/master`.**
+  Starting at the base ref itself would render other people's commits as
+  reverse-changes, which no other range on the page does.
 
 - **Forgejo can't do the job this tool exists for.** Its compare view is better than
   ours and came up in a minute, but it only sees *pushed* branches, so uncommitted
