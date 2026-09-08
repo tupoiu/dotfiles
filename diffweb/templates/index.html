@@ -1,4 +1,7 @@
 {% extends "base.html" %}
+{% block toolbar %}
+{% if features.profiling %}<a class="topbar-link" href="/profiles">profiles</a>{% endif %}
+{% endblock %}
 {% block content %}
 <table class="catalog" id="catalog">
   <thead>

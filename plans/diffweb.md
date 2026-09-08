@@ -31,6 +31,7 @@ See `diffweb/README.md` for how to run it and `diffweb/ROADMAP.md` for ideas.
 - [x] Changed lines render as blocks, not alternating pairs (`diffweb/static/render-options.js`) — red test first, `-+-+` → `--++` on the real kasli `build.rs`, 98 tests pass
 - [x] Halve the diff stage: one `git diff` per request instead of two (`diffweb/app.py`) — measured 46.7ms → 22.8ms on the kasli worktree, with a test that counts the calls
 - [x] Range shortcuts — one-click *working tree* / *whole branch* / *last commit* / *unpushed* / *staged*, on their own line above base/from/to (`diffweb/templates/worktree.html`) — 113 tests pass and every state was driven in a real browser in both themes
+- [x] Profile the diff-to-HTML path — server stage timings plus client fetch/render posted back, appended to a JSONL log and shown at `/profiles` (`diffweb/profiling.py`, `diffweb/app.py:178`) — 110 tests pass; `/profiles` screenshotted in both colour schemes on :8766
 - [ ] Open-in-editor links — deliberately deferred, see ROADMAP
 - [ ] code-server + GitLens comparison — never spiked, nothing was running on this VM
 
@@ -133,6 +134,18 @@ See `diffweb/README.md` for how to run it and `diffweb/ROADMAP.md` for ideas.
   noise, and a 500 on the catalog when it hits. Every method now locks.
 - **The tool now finds its own worktrees**, because `~/worktrees/*/*` matches
   `~/worktrees/dotfiles/*`. Unplanned, and the best dogfooding available.
+
+- **The server's half of the wait is not the interesting half.** On the 9-file
+  kasli branch the whole journey is ~230ms: ~120ms server (of which `git diff`
+  ~50ms, blob shas ~38ms, numstat ~22ms — JSON serialisation is 0.1ms and not
+  worth optimising), and ~95ms of diff2html rendering in the browser. Any future
+  speed work belongs in the three git calls and in the renderer, not in Python.
+- **A profile only exists once the page reports back**, so the server parks its
+  half in a bounded in-memory dict keyed by an id it returns in the diff body.
+  A page closed mid-load simply never posts and the entry ages out.
+- **Timing serialisation means owning it**: the endpoint json.dumps the payload
+  itself and returns a `Response`, because anything FastAPI encodes after the
+  handler returns is invisible to a handler-scoped timer.
 
 ## Verify
 

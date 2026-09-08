@@ -46,10 +46,20 @@ Scratchpad. Add anything, however half-formed - nothing here is committed to.
     source, living outside the repo. Parse lazily, cache by file mtime, and
     surface only paths, session names and timestamps - never message content.
 
-- Profile the diff-to-HTML path: the wall-clock a user waits between opening a
+- ~~Profile the diff-to-HTML path: the wall-clock a user waits between opening a
   worktree and seeing the diff of a heavy branch, broken down by stage, with a
   small page that shows recent profiles. Profiles are local noise - gitignore
-  them.
+  them.~~ Done - see `diffweb/profiling.py` and `/profiles`.
+
+- **`git diff` runs twice per request.** The first thing profiling turned up:
+  `gitio.diff_size_bytes` shells out for the whole diff just to measure its
+  length, then `cached_diff` computes the identical diff again - 22ms each on
+  the kasli worktree, about half the `diff` stage thrown away. Decide the lazy
+  threshold from the numstat totals we already have, or keep the text from the
+  one call.
+- Parallelise the three git calls behind a diff request (`refs`, `numstat`,
+  `shas`, `diff`) - they are sequential and independent, and together they are
+  roughly half the user's wait.
 
 - Refactoring cleanup: `app.py` is doing route handling, caching and PR fan-out at
   once, `worktree.js` has grown to several hundred lines of globals, and the

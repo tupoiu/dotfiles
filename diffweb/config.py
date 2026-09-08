@@ -28,6 +28,8 @@ class Features(BaseModel):
     live_reload: bool = True
     # Shells out to `gh`, which hits the network; harmless but opt-out-able.
     pr_links: bool = True
+    # Records stage timings for the diff path; off means no timing work at all.
+    profiling: bool = True
 
 
 class Limits(BaseModel):
@@ -69,12 +71,18 @@ class DiffwebConfig(BaseModel):
     noise: Noise = Field(default_factory=Noise)
     tools: Tools = Field(default_factory=Tools)
     state_db: str = "~/.local/state/diffweb/state.db"
+    profile_log: str = "~/.local/state/diffweb/profiles.jsonl"
+    # Older profiles are dropped so the log cannot grow without bound.
+    profile_keep: int = 500
 
     def expanded_roots(self) -> list[str]:
         return [os.path.expanduser(r) for r in self.roots]
 
     def state_db_path(self) -> Path:
         return Path(os.path.expanduser(self.state_db))
+
+    def profile_log_path(self) -> Path:
+        return Path(os.path.expanduser(self.profile_log))
 
 
 def config_path(path: str | os.PathLike[str] | None = None) -> Path:

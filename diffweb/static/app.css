@@ -218,3 +218,23 @@ body.hide-reviewed .d2h-file-wrapper.is-reviewed { display: none; }
 .pr-refresh:hover { color: var(--accent); }
 .pr-refresh.spinning { animation: pr-spin .8s linear infinite; }
 @keyframes pr-spin { to { transform: rotate(360deg); } }
+
+/* Profiling: stage-split bars on /profiles. The seven stage colours only need
+   to be distinguishable from each other, and readable on both backgrounds. */
+.topbar-link { margin-left: auto; color: var(--dim); }
+.stage-col { width: 34%; }
+.stagebar {
+  display: flex; height: 9px; min-width: 120px; overflow: hidden;
+  border-radius: 3px; background: var(--panel);
+}
+.seg { display: inline-block; height: 9px; }
+.seg-refs { background: #8957e5; }
+.seg-numstat { background: var(--accent); }
+.seg-shas { background: #1f9c9c; }
+.seg-diff { background: var(--add); }
+.seg-serialise { background: #d29922; }
+.seg-network { background: var(--dim); }
+.seg-render { background: var(--del); }
+.legend { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+.legend .key { display: inline-flex; align-items: center; gap: 5px; }
+.legend .seg { width: 12px; border-radius: 2px; }

@@ -37,6 +37,7 @@ features:
   pr_links: true           # look up each branch's PR with `gh`
   reviewed_state: true     # per-file reviewed checkboxes
   live_reload: true        # SSE push when the worktree changes
+  profiling: true          # stage timings for the diff path, shown at /profiles
 limits:
   max_inline_diff_bytes: 1500000   # above this the page loads file-by-file
   max_inline_files: 300
@@ -48,6 +49,8 @@ tools:
   gh_path: null            # defaults to whatever `gh` is on PATH
   gh_timeout_seconds: 5.0
 state_db: "~/.local/state/diffweb/state.db"
+profile_log: "~/.local/state/diffweb/profiles.jsonl"
+profile_keep: 500          # older profiles are dropped
 ```
 
 Discovery is the union of those globs and `git worktree list` run from each hit,
@@ -135,6 +138,14 @@ entirely so that late in a review only the remaining work is on screen.
 **Live reload.** The page opens an SSE stream; the server polls `HEAD` plus
 `git status --porcelain=v2` every two seconds and pushes a change event, and the
 page re-renders in place keeping your scroll position.
+
+**Profiling** (`features.profiling`). `/profiles`, linked from the catalog
+header, lists recent renders newest first with a stage bar: ref resolution,
+`git diff`, numstat, blob shas, serialisation, network, and diff2html render.
+The last two are measured by the page and posted back, because the wait the user
+complains about is mostly not the server's - on a 9-file branch it is roughly
+120ms of git and 95ms of rendering. Profiles land in `profile_log` as JSONL,
+capped at `profile_keep`.
 
 ## Alternatives that were tried first
 

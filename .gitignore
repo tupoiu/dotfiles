@@ -16,3 +16,5 @@ diffweb/static/vendor/*
 # diffweb dev tooling (playwright for diffweb/shot.mjs)
 diffweb/node_modules/
 diffweb/package-lock.json
+# diffweb profile log, if it is configured inside the repo
+profiles.jsonl
