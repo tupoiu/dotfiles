@@ -82,6 +82,8 @@ input, select {
 
 .summary { color: var(--dim); margin-bottom: 12px; }
 .summary .warn { color: var(--del); }
+.summary .merge-note { color: var(--accent); }
+.summary .merge-note code { font-size: 12px; }
 /* difftastic's palette is tuned for a dark terminal, and the ANSI colours are
    baked in as inline styles, so this block stays dark in both themes. */
 .difft { overflow-x: auto; background: #0e1116; color: #d7dde5; padding: 12px;

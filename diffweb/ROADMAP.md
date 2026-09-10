@@ -74,6 +74,14 @@ Scratchpad. Add anything, however half-formed - nothing here is committed to.
 
 - AI-generated change summary per worktree, shown on the catalog row.
 - Stacked view: one section per commit rather than one flattened range.
+- Merge commits: the remerge/true-diff split only applies to a single merge
+  commit. A range containing several merges could offer "hide clean merges" or
+  a per-commit remerge view once the stacked view exists. `--remerge-diff`
+  against a chosen *second* parent (what did the merge do to the side branch?)
+  is `git show --remerge-diff` already; it just needs a picker.
+- Remerge is slower than a plain diff on a big repo because git actually redoes
+  the merge in memory. It is cached like any other commit-to-commit diff, but
+  the first hit on a large merge may be worth a "redoing merge…" status.
 - "What changed since I last looked" as a cross-worktree feed on the catalog page.
 - Keyboard navigation between *worktrees* (`]`/`[`); within a diff it already exists.
 - Word-level intra-line highlighting on the line renderer (diff2html does some of

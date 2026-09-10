@@ -8,6 +8,7 @@ const $end = document.getElementById("end");
 const $sbs = document.getElementById("sbs");
 const $hideReviewed = document.getElementById("hide-reviewed");
 const $structural = document.getElementById("structural");
+const $trueDiff = document.getElementById("true-diff");
 const $status = document.getElementById("status");
 const $summary = document.getElementById("summary");
 const $diff = document.getElementById("diff");
@@ -34,6 +35,12 @@ $sbs.addEventListener("change", () => {
   render();
 });
 $structural?.addEventListener("change", render);
+// Only meaningful on a single merge commit; the server decides when that is
+// and the box is shown or hidden from its answer. It rides in the URL so a
+// merge's true diff can be linked to, but is not remembered across pages:
+// the resolution is the default reading every time.
+$trueDiff.checked = new URLSearchParams(location.search).get("remerge") === "0";
+$trueDiff.addEventListener("change", render);
 
 $hideReviewed.checked = localStorage.getItem("diffweb.hide-reviewed") === "1";
 $hideReviewed.addEventListener("change", () => {
@@ -127,6 +134,7 @@ function syncUrl() {
   if ($base.value) q.set("base", $base.value);
   if ($start.value) q.set("start", $start.value);
   if ($end.value) q.set("end", $end.value);
+  if ($trueDiff.checked) q.set("remerge", "0");
   history.replaceState(null, "", `${location.pathname}?${q}`);
 }
 
@@ -145,7 +153,7 @@ async function loadCommits() {
   $start.appendChild(new Option("HEAD~1 (before the last commit)", BEFORE_HEAD));
   $start.appendChild(new Option("@{upstream} (last pushed commit)", UPSTREAM));
   for (const c of data.commits) {
-    const label = `${c.short}  ${c.subject}  (${c.when})`;
+    const label = `${c.short}  ${c.subject}${c.merge ? "  [merge]" : ""}  (${c.when})`;
     $start.appendChild(new Option(label, c.sha));
     $end.appendChild(new Option(label, c.sha));
   }
@@ -169,12 +177,16 @@ async function render() {
   if ($start.value) q.start = $start.value;
   if ($end.value) q.end = $end.value;
   if ($structural?.checked) q.renderer = "structural";
+  if ($trueDiff.checked) q.remerge = "false";
 
   const fetchStart = performance.now();
   const r = await fetch(api("diff", q));
   const data = await r.json();
   const fetchMs = performance.now() - fetchStart;
   if (!r.ok || data.error) { $diff.innerHTML = ""; $summary.innerHTML = `<span class="warn">${data.error}</span>`; status(""); return; }
+
+  // The tickbox exists only while the range is one merge commit.
+  $trueDiff.parentElement.hidden = !data.merge;
 
   currentReview = data.review || {};
   shas = data.shas || {};
@@ -188,7 +200,8 @@ async function render() {
   $summary.innerHTML =
     `${files.length} files · <span class="add">+${added}</span> <span class="del">−${removed}</span>` +
     ` · ${reviewed}/${files.length} reviewed` +
-    (changed ? ` · <span class="warn">${changed} changed since you reviewed</span>` : "");
+    (changed ? ` · <span class="warn">${changed} changed since you reviewed</span>` : "") +
+    mergeNote(data);
 
   const renderStart = performance.now();
   if (data.renderer === "structural") {
@@ -202,6 +215,16 @@ async function render() {
   }
   status("");
   reportProfile(data.profile_id, fetchMs, performance.now() - renderStart);
+}
+
+// Say which of the two readings of a merge commit is on screen, since the
+// remerge one can legitimately be empty (a clean merge has no resolution).
+function mergeNote(data) {
+  if (!data.merge) return "";
+  return data.remerge
+    ? ` · <span class="merge-note">merge commit: showing only the conflict resolution` +
+      ` (<code>--remerge-diff</code>); tick <i>true diff</i> for everything it brought in</span>`
+    : ` · <span class="merge-note">merge commit: showing the full diff against its first parent</span>`;
 }
 
 // The server can time its own work but not the two stages the user waits

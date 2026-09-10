@@ -490,6 +490,135 @@ def test_explicit_commit_range(client: TestClient, config: DiffwebConfig, world:
     assert {f["path"] for f in data["files"]} == {"c.txt"}  # just the last commit
 
 
+# --- merge commits ---------------------------------------------------------
+
+
+@pytest.fixture
+def merged(world: dict[str, Path]) -> dict[str, Path]:
+    """`feature` with a hand-resolved merge of `side` on top.
+
+    `side` touches a.txt (conflicts with feature's TWO) and adds s.txt (merges
+    cleanly). The resolution is the one line a human wrote: MERGED.
+    """
+    repo = world["repo"]
+    git(repo, "checkout", "-b", "side", "origin/master")
+    commit(repo, "a.txt", "one\ntwo-side\nthree\n", "side a")
+    commit(repo, "s.txt", "side\n", "add s")
+    git(repo, "checkout", "feature")
+    proc = subprocess.run(["git", "merge", "side"], cwd=repo, capture_output=True, text=True,
+                          env={**os.environ, **GIT_ENV})
+    assert proc.returncode != 0, "the merge must conflict for the test to mean anything"
+    (repo / "a.txt").write_text("one\nMERGED\nthree\n")
+    git(repo, "add", "a.txt")
+    git(repo, "commit", "-m", "merge side")
+    return world
+
+
+def test_commit_list_flags_merge_commits(merged: dict[str, Path]) -> None:
+    repo = str(merged["repo"])
+    rows = gitio.commits(repo, gitio.merge_base(repo, "origin/master"), "HEAD")
+    assert [r["subject"] for r in rows if r["merge"]] == ["merge side"]
+    assert not any(r["merge"] for r in rows if r["subject"] != "merge side")
+
+
+def test_parents_of_a_merge_and_of_a_plain_commit(merged: dict[str, Path]) -> None:
+    repo = str(merged["repo"])
+    head, first = (git(merged["repo"], "rev-parse", "HEAD", "HEAD^1").split())
+    assert gitio.parents(repo, head)[0] == first
+    assert len(gitio.parents(repo, head)) == 2
+    assert len(gitio.parents(repo, first)) == 1
+    assert gitio.is_merge_commit(repo, head) and not gitio.is_merge_commit(repo, first)
+
+
+def test_remerge_diff_shows_only_the_resolution(merged: dict[str, Path]) -> None:
+    """A merge commit's true diff is mostly the other branch; what a human wrote
+    is the conflict resolution, and that is what --remerge-diff isolates."""
+    repo = str(merged["repo"])
+    head = gitio.resolve_ref(repo, "HEAD")
+    text = gitio.remerge_diff_text(repo, head)
+    assert "+MERGED" in text
+    assert "<<<<<<<" in text and ">>>>>>>" in text      # the conflict being resolved
+    assert "s.txt" not in text                          # merged cleanly, so not authored
+    paths = {r["path"] for r in gitio.remerge_numstat(repo, head)}
+    assert paths == {"a.txt"}
+
+
+def test_first_parent_diff_of_a_merge_shows_everything(merged: dict[str, Path]) -> None:
+    repo = str(merged["repo"])
+    head = gitio.resolve_ref(repo, "HEAD")
+    paths = {r["path"] for r in gitio.numstat(repo, gitio.parents(repo, head)[0], head)}
+    assert paths == {"a.txt", "s.txt"}
+
+
+def test_remerge_diff_limited_to_files(merged: dict[str, Path]) -> None:
+    repo = str(merged["repo"])
+    head = gitio.resolve_ref(repo, "HEAD")
+    assert gitio.remerge_diff_text(repo, head, files=["s.txt"]) == ""
+    assert "a.txt" in gitio.remerge_diff_text(repo, head, files=["a.txt"])
+
+
+def test_remerge_blob_shas_are_the_resolved_blobs(merged: dict[str, Path]) -> None:
+    repo = str(merged["repo"])
+    head = gitio.resolve_ref(repo, "HEAD")
+    shas = gitio.remerge_blob_shas(repo, head)
+    resolved = git(merged["repo"], "rev-parse", "HEAD:a.txt").strip()
+    assert set(shas) == {"a.txt"}
+    assert resolved.startswith(shas["a.txt"])
+
+
+def test_api_single_merge_commit_defaults_to_remerge(
+    merged: dict[str, Path], client: TestClient, config: DiffwebConfig
+) -> None:
+    wid = wt_id(config, "proj")
+    data = client.get(f"/api/w/{wid}/diff", params={"start": "HEAD~1", "end": "HEAD"}).json()
+    assert data["merge"] is True and data["remerge"] is True
+    assert {f["path"] for f in data["files"]} == {"a.txt"}
+    assert "+MERGED" in data["diff"] and "s.txt" not in data["diff"]
+
+
+def test_api_merge_commit_true_diff_on_request(
+    merged: dict[str, Path], client: TestClient, config: DiffwebConfig
+) -> None:
+    wid = wt_id(config, "proj")
+    data = client.get(
+        f"/api/w/{wid}/diff", params={"start": "HEAD~1", "end": "HEAD", "remerge": "false"}
+    ).json()
+    assert data["merge"] is True and data["remerge"] is False
+    assert {f["path"] for f in data["files"]} == {"a.txt", "s.txt"}
+    assert "<<<<<<<" not in data["diff"]
+
+
+def test_api_remerge_only_applies_to_a_single_merge_commit(
+    merged: dict[str, Path], client: TestClient, config: DiffwebConfig
+) -> None:
+    wid = wt_id(config, "proj")
+    # A range that merely *ends* at the merge is a range, not a commit.
+    data = client.get(f"/api/w/{wid}/diff", params={"end": "HEAD"}).json()
+    assert data["merge"] is False and data["remerge"] is False
+    assert "s.txt" in {f["path"] for f in data["files"]}
+    # A single non-merge commit is not a merge either, even if asked.
+    data = client.get(
+        f"/api/w/{wid}/diff", params={"start": "HEAD~2", "end": "HEAD~1", "remerge": "true"}
+    ).json()
+    assert data["merge"] is False and data["remerge"] is False
+    # The lazy, per-file path keeps the mode.
+    data = client.get(
+        f"/api/w/{wid}/diff", params={"start": "HEAD~1", "end": "HEAD", "files": ["a.txt"]}
+    ).json()
+    assert data["remerge"] is True and "<<<<<<<" in data["diff"]
+
+
+def test_remerge_and_true_diffs_do_not_share_a_cache_entry(
+    merged: dict[str, Path], client: TestClient, config: DiffwebConfig
+) -> None:
+    wid = wt_id(config, "proj")
+    params = {"start": "HEAD~1", "end": "HEAD"}
+    first = client.get(f"/api/w/{wid}/diff", params=params).json()["diff"]
+    second = client.get(f"/api/w/{wid}/diff", params={**params, "remerge": "false"}).json()["diff"]
+    third = client.get(f"/api/w/{wid}/diff", params=params).json()["diff"]
+    assert first == third and first != second
+
+
 def _enable_structural(tmp_path: Path, **extra: object) -> None:
     p = tmp_path / "diffweb.yaml"
     data = yaml.safe_load(p.read_text())
@@ -1095,3 +1224,29 @@ def test_segments_cover_the_whole_wait() -> None:
 
 def test_segments_of_an_untimed_record_are_empty() -> None:
     assert profiling.segments({"total_ms": 0}) == []
+
+
+REMERGE_PATCH = "\n".join([
+    "diff --git a/a.txt b/a.txt",
+    "remerge CONFLICT (content): Merge conflict in a.txt",
+    "index 97af53a..755550f 100644",
+    "--- a/a.txt",
+    "+++ b/a.txt",
+    "@@ -1,7 +1,3 @@",
+    " one",
+    "-<<<<<<< 61e83c5 (feat)",
+    "-TWO",
+    "-=======",
+    "-two-side",
+    "->>>>>>> 45ba0c3 (side)",
+    "+MERGED",
+    " three",
+    "",
+])
+
+
+@needs_node
+def test_remerge_patch_renders_despite_the_conflict_header_line() -> None:
+    """git puts a `remerge CONFLICT` line in the extended header, which diff2html
+    has never heard of. It must be skipped, not mistaken for the patch."""
+    assert render_order(REMERGE_PATCH) == "..-----+."

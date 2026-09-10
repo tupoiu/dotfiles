@@ -79,6 +79,17 @@ an unknown ref), and *staged* (merge base → the index, which is
 up, and picking a range by hand updates it. The index is a sentinel end of a
 range like the working tree is, and is never cached.
 
+**Merge commits.** When the range is exactly one merge commit (its first parent
+→ itself, which is what *last commit* gives you on a fresh merge), the page
+shows `git show --remerge-diff` by default: git redoes the merge, then diffs the
+conflicted result against what was committed, so what you see is only the
+conflict resolution the merger wrote by hand. A clean merge is therefore an
+empty diff, and the summary says which reading is on screen. Tick *true diff* to
+see the whole first-parent diff instead - everything the merge brought in. The
+tick rides in the URL as `remerge=0` but is not remembered: the resolution is
+the default every time. Merge commits are marked `[merge]` in the from/to
+pickers. A range that merely *ends* at a merge is a range, and unaffected.
+
 **Reviewed state.** Tick a file to collapse it. The tick is stored against that
 file's current blob sha, so when the file changes afterwards it reopens badged
 "changed since you reviewed". State lives in SQLite, keyed by worktree.

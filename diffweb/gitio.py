@@ -159,15 +159,25 @@ def merge_base(path: str, base: str, head: str = "HEAD") -> str:
     return out.strip() if out else base_sha
 
 
-def commits(path: str, start: str, end: str = "HEAD", limit: int = 500) -> list[dict[str, str]]:
+def commits(path: str, start: str, end: str = "HEAD", limit: int = 500) -> list[dict[str, object]]:
     start_sha = resolve_ref(path, start)
     end_sha = resolve_ref(path, "HEAD" if end in (WORKTREE, INDEX) else end)
-    fmt = "%H%x1f%h%x1f%an%x1f%ar%x1f%s"
+    fmt = "%H%x1f%h%x1f%an%x1f%ar%x1f%P%x1f%s"
     out = _try_git(path, "log", f"--max-count={limit}", f"--format={fmt}", f"{start_sha}..{end_sha}") or ""
-    rows = []
+    rows: list[dict[str, object]] = []
     for line in out.splitlines():
-        sha, short, author, when, subject = line.split("\x1f")
-        rows.append({"sha": sha, "short": short, "author": author, "when": when, "subject": subject})
+        sha, short, author, when, parents_, subject = line.split("\x1f")
+        rows.append(
+            {
+                "sha": sha,
+                "short": short,
+                "author": author,
+                "when": when,
+                "subject": subject,
+                # A merge commit gets two readings on the diff page (see app.api_diff).
+                "merge": len(parents_.split()) > 1,
+            }
+        )
     return rows
 
 
@@ -204,8 +214,7 @@ def is_noisy(path: str, patterns: list[str]) -> bool:
     return False
 
 
-def numstat(path: str, start: str, end: str) -> list[dict[str, object]]:
-    out = _try_git(path, "diff", "--numstat", "-M", "-C", *_diff_args(start, end)) or ""
+def _parse_numstat(out: str) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for line in out.splitlines():
         added, removed, name = line.split("\t", 2)
@@ -220,9 +229,11 @@ def numstat(path: str, start: str, end: str) -> list[dict[str, object]]:
     return rows
 
 
-def blob_shas(path: str, start: str, end: str) -> dict[str, str]:
-    """Post-image blob sha per file, used to tell 'reviewed' from 'changed since'."""
-    out = _try_git(path, "diff", "--raw", "-M", "-C", *_diff_args(start, end)) or ""
+def numstat(path: str, start: str, end: str) -> list[dict[str, object]]:
+    return _parse_numstat(_try_git(path, "diff", "--numstat", "-M", "-C", *_diff_args(start, end)) or "")
+
+
+def _parse_raw(path: str, out: str) -> dict[str, str]:
     shas: dict[str, str] = {}
     for line in out.splitlines():
         meta, _, names = line.partition("\t")
@@ -236,6 +247,49 @@ def blob_shas(path: str, start: str, end: str) -> dict[str, str]:
             dst = (_try_git(path, "hash-object", "--", name) or "").strip() or "worktree"
         shas[name] = dst
     return shas
+
+
+def blob_shas(path: str, start: str, end: str) -> dict[str, str]:
+    """Post-image blob sha per file, used to tell 'reviewed' from 'changed since'."""
+    return _parse_raw(path, _try_git(path, "diff", "--raw", "-M", "-C", *_diff_args(start, end)) or "")
+
+
+# --- merge commits ---------------------------------------------------------
+#
+# A merge commit's diff against its first parent is mostly the other branch's
+# work. What the merger actually authored is the conflict resolution, and
+# `git show --remerge-diff` isolates that: it redoes the merge, then diffs the
+# conflicted result against what was committed. `git show` is `git diff`
+# against the commit's parents, so the same -M/-C/--numstat/--raw flags apply;
+# `--format=` drops the commit header so only the patch is left.
+
+
+def parents(path: str, sha: str) -> list[str]:
+    out = (_try_git(path, "rev-list", "--parents", "-n1", sha) or "").split()
+    return out[1:]
+
+
+def is_merge_commit(path: str, sha: str) -> bool:
+    return len(parents(path, sha)) > 1
+
+
+def _remerge_args(sha: str, files: list[str] | None = None, *extra: str) -> list[str]:
+    args = ["show", "--remerge-diff", "--format=", "--no-color", "-M", "-C", *extra, sha]
+    if files:
+        args += ["--", *files]
+    return args
+
+
+def remerge_diff_text(path: str, sha: str, files: list[str] | None = None) -> str:
+    return _try_git(path, *_remerge_args(sha, files)) or ""
+
+
+def remerge_numstat(path: str, sha: str) -> list[dict[str, object]]:
+    return _parse_numstat(_try_git(path, *_remerge_args(sha, None, "--numstat")) or "")
+
+
+def remerge_blob_shas(path: str, sha: str) -> dict[str, str]:
+    return _parse_raw(path, _try_git(path, *_remerge_args(sha, None, "--raw")) or "")
 
 
 def structural_diff(path: str, start: str, end: str, difft: str | None = None) -> str:

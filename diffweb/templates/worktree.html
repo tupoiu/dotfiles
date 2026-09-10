@@ -65,6 +65,9 @@
   <label>to <select id="end"></select></label>
   <label class="chk"><input type="checkbox" id="sbs"> side&#8209;by&#8209;side</label>
   <label class="chk"><input type="checkbox" id="hide-reviewed"> hide reviewed</label>
+  <label class="chk" id="true-diff-wrap" hidden
+         title="A merge commit shows only its conflict resolution (git show --remerge-diff) by default. Tick to see the whole diff against the first parent instead.">
+    <input type="checkbox" id="true-diff"> true diff</label>
   {% if features.structural %}
   <label class="chk"><input type="checkbox" id="structural" {% if not difft_available %}disabled{% endif %}>
     structural</label>

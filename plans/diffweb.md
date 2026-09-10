@@ -32,6 +32,7 @@ See `diffweb/README.md` for how to run it and `diffweb/ROADMAP.md` for ideas.
 - [x] Halve the diff stage: one `git diff` per request instead of two (`diffweb/app.py`) — measured 46.7ms → 22.8ms on the kasli worktree, with a test that counts the calls
 - [x] Range shortcuts — one-click *working tree* / *whole branch* / *last commit* / *unpushed* / *staged*, on their own line above base/from/to (`diffweb/templates/worktree.html`) — 113 tests pass and every state was driven in a real browser in both themes
 - [x] Profile the diff-to-HTML path — server stage timings plus client fetch/render posted back, appended to a JSONL log and shown at `/profiles` (`diffweb/profiling.py`, `diffweb/app.py:178`) — 110 tests pass; `/profiles` screenshotted in both colour schemes on :8766
+- [x] Merge commits show their remerge diff by default, with a *true diff* tick for the first-parent diff (`diffweb/gitio.py` `remerge_*`, `diffweb/app.py:_is_single_merge`) — tests written first against a hand-resolved conflict; 140 pass; both readings screenshotted in both themes on :8799
 - [ ] Open-in-editor links — deliberately deferred, see ROADMAP
 - [ ] code-server + GitLens comparison — never spiked, nothing was running on this VM
 
@@ -51,6 +52,19 @@ See `diffweb/README.md` for how to run it and `diffweb/ROADMAP.md` for ideas.
   is a ref like any other until it isn't: `resolve_ref` raises, and the raw
   `unknown ref '@{upstream}'` reads as a bug in the page. `_range` turns that
   one failure into "<branch> has no upstream branch, so nothing is pushed".
+- **`--remerge-diff` is a diff mode, so all the diff plumbing works with it.**
+  `git show --remerge-diff --format= <sha>` accepts `--numstat`, `--raw`, `-M`,
+  `-C` and a `-- <paths>` limiter exactly like `git diff`, so the merge path
+  reuses the same parsers and the same per-file lazy load. On a non-merge it
+  silently degrades to a normal diff, which is why the server decides "is this a
+  single merge commit" itself (`_is_single_merge`: two parents, and the start is
+  the first one) rather than trusting the query. It puts a
+  `remerge CONFLICT (content): ...` line in the extended header, which diff2html
+  ignores correctly; pinned by `test_remerge_patch_renders_despite_the_conflict_header_line`.
+  Remerge and first-parent text share the `_diff_cache` key space only because
+  the mode is part of the key - a bare `(path, start, end)` key would serve the
+  wrong reading. The structural renderer runs `git diff` under difftastic, so
+  remerge is forced off there.
 - **The staged shortcut starts at the merge base, not at `origin/master`.**
   Starting at the base ref itself would render other people's commits as
   reverse-changes, which no other range on the page does.

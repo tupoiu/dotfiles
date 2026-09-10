@@ -22,6 +22,34 @@ Format - one entry per session, newest first:
 
 ---
 
+## 2026-09-10 - remerge diff for merge commits
+
+- `poe diffweb-test` / the `world` fixture - helped. Building a `merged` fixture
+  on top of `world` (a conflicting side branch, `git merge` asserted to fail,
+  then a hand-written resolution) took a few lines and gave every gitio and API
+  test a real conflict to bite on. Tests were written first and all nine failed
+  for the right reason before any implementation existed.
+- `tests/render_order.cjs` - helped, unexpectedly. It was built for the
+  `-+-+` ordering bug, but "does diff2html swallow git's `remerge CONFLICT`
+  header line?" is the same question shape, and answering it without a browser
+  was one shell pipe. Now pinned as a test.
+- `poe diffweb-shot` - helped; both readings in both themes for free.
+  **Improve:** `--out /abs/path` is parsed as a page to screenshot, because
+  every argv starting with `/` is a path. It produced two 404 "page errors" and
+  a PNG of the 404 page named after my output directory. Consume option values
+  before filtering for paths. Also, it cannot tick a checkbox, so the *true
+  diff* state had to be put in the URL partly so the tool could reach it - a
+  fine outcome, but a `--click <css>` flag would have been the direct route.
+- Running a second instance - same boilerplate as last time (temp YAML,
+  `DIFFWEB_CONFIG`, background `uv run`, poll `/healthz`, compute the worktree
+  id by hand with sha1). `--port`/`--roots` flags and a `--print-ids` are still
+  the improvement. Stopping it afterwards was also fiddly: the `uv run` parent
+  and the python child need killing separately, and the fish/bash `pkill`
+  returned 144 on a pattern that matched itself. Worse: `pkill -f diffweb` also
+  took down the real instance on :8765, which nobody noticed until the user
+  asked. A throwaway instance should write a pidfile next to its config so
+  stopping it is `kill (cat pid)`, never a pattern match.
+
 ## 2026-08-28 - range shortcuts (working tree / whole branch / last commit / unpushed / staged)
 
 - `poe diffweb-test` - helped. 2.7s for 109 tests, and it caught a `str`/`Path`

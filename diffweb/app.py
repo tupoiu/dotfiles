@@ -94,10 +94,10 @@ def find_worktree(wt_id: str, config: DiffwebConfig) -> Worktree:
 
 
 # Resolved diffs are immutable once both ends are commits, so they cache well.
-_diff_cache: dict[tuple[str, str, str], str] = {}
+_diff_cache: dict[tuple[str, str, str, bool], str] = {}
 
 
-def cached_diff(path: str, start: str, end: str, max_cacheable: int) -> str:
+def cached_diff(path: str, start: str, end: str, max_cacheable: int, remerge: bool = False) -> str:
     """Diff text, memoised while both ends name commits.
 
     Oversized diffs are computed but not kept: those are the ones the page
@@ -106,15 +106,21 @@ def cached_diff(path: str, start: str, end: str, max_cacheable: int) -> str:
     if end in (WORKTREE, INDEX):
         # Both ends move under our feet, so neither is safe to memoise.
         return gitio.diff_text(path, start, end)
-    key = (path, start, end)
+    key = (path, start, end, remerge)
     if key in _diff_cache:
         return _diff_cache[key]
-    text = gitio.diff_text(path, start, end)
+    text = gitio.remerge_diff_text(path, end) if remerge else gitio.diff_text(path, start, end)
     if len(text) <= max_cacheable:
         if len(_diff_cache) > 32:
             _diff_cache.clear()
         _diff_cache[key] = text
     return text
+
+
+def _is_single_merge(path: str, start: str, end: str) -> bool:
+    """True when the range is one merge commit: its first parent up to itself."""
+    ps = gitio.parents(path, end)
+    return len(ps) > 1 and ps[0] == start
 
 
 def _range(wt: Worktree, base: str, start: str | None, end: str | None) -> tuple[str, str]:
@@ -219,6 +225,7 @@ def api_diff(
     start: str | None = None,
     end: str | None = None,
     renderer: str = "line",
+    remerge: bool | None = None,
     files: list[str] | None = Query(default=None),
     config: DiffwebConfig = Depends(get_config),
 ) -> Any:
@@ -230,14 +237,20 @@ def api_diff(
     with timer.stage("refs"):
         base = base or state.base_ref(wt_id) or gitio.default_base(wt.path)
         s, e = _range(wt, base, start, end)
+        # Exactly one merge commit (first parent -> merge) has two readings: the
+        # first-parent diff, which is mostly the other branch, and the remerge
+        # diff, which is only what the merger resolved by hand. The latter is the
+        # default; `remerge=false` asks for the former. Anything else is a range.
+        merge = e not in (WORKTREE, INDEX) and _is_single_merge(wt.path, s, e)
+        remerge = merge and remerge is not False and renderer != "structural"
 
     with timer.stage("numstat"):
-        stats = gitio.numstat(wt.path, s, e)
+        stats = gitio.remerge_numstat(wt.path, e) if remerge else gitio.numstat(wt.path, s, e)
         for row in stats:
             row["noisy"] = gitio.is_noisy(str(row["path"]), config.noise.collapse_by_default)
 
     with timer.stage("shas"):
-        shas = gitio.blob_shas(wt.path, s, e)
+        shas = gitio.remerge_blob_shas(wt.path, e) if remerge else gitio.blob_shas(wt.path, s, e)
         review = state.review_status(wt_id, shas) if config.features.reviewed_state else {}
 
     if renderer == "structural":
@@ -254,13 +267,18 @@ def api_diff(
 
     with timer.stage("diff"):
         if files:
-            diff, lazy = gitio.diff_text(wt.path, s, e, files), False
+            diff = (
+                gitio.remerge_diff_text(wt.path, e, files)
+                if remerge
+                else gitio.diff_text(wt.path, s, e, files)
+            )
+            lazy = False
         else:
             # One `git diff`. Sizing it with a second, identical `git diff` whose
             # output was thrown away doubled the most expensive stage of the
             # request, and saved no memory either - the subprocess buffers the
             # whole output regardless.
-            diff = cached_diff(wt.path, s, e, config.limits.max_inline_diff_bytes)
+            diff = cached_diff(wt.path, s, e, config.limits.max_inline_diff_bytes, remerge)
             lazy = (
                 len(diff.encode()) > config.limits.max_inline_diff_bytes
                 or len(stats) > config.limits.max_inline_files
@@ -273,6 +291,8 @@ def api_diff(
         "start": s,
         "end": e,
         "base": base,
+        "merge": merge,
+        "remerge": remerge,
         "files": stats,
         "review": review,
         "shas": shas,
