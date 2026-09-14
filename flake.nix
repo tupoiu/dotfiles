@@ -129,7 +129,10 @@
         fakeRootCommands = ''
           # Create every mount point first. Otherwise podman creates the missing
           # parents as root and the container user cannot write beside them.
-          mkdir -p ./home/node/.config/fish ./home/node/.claude ./workspace
+          mkdir -p ./home/node/.config/fish ./home/node/.config/jj \
+            ./home/node/.claude ./home/node/.pi \
+            ./home/node/.cache/uv ./home/node/.cache/fish \
+            ./home/node/venv ./workspace
           chown -R 1000:1000 ./home/node ./workspace
 
           # No base image means no /tmp. Mode 1777 lets any user create files
