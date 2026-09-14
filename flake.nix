@@ -1,44 +1,39 @@
 {
-  # A flake is an attribute set with two key fields: `inputs` (what it depends
-  # on) and `outputs` (what it produces). That's the whole shape.
   description = "dotfiles dev environment";
 
   inputs = {
-    # Pinned in flake.lock the first time you build. Nobody gets a different
-    # nixpkgs until you deliberately run `nix flake update`.
+    # flake.lock pins this. It changes only on `nix flake update`.
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
     home-manager = {
       url = "github:nix-community/home-manager";
-      # Make home-manager use OUR nixpkgs rather than pulling a second copy.
+      # Use the nixpkgs above. Do not pull a second copy.
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
-  # `outputs` is a FUNCTION from the resolved inputs to what this flake exposes.
   outputs = { self, nixpkgs, home-manager }:
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs {
         inherit system;
-        # nixpkgs refuses unfree packages by default. Allow exactly the ones we
-        # want rather than opening the gate entirely.
+        # nixpkgs refuses unfree packages. Allow these by name.
         config.allowUnfreePredicate = pkg:
           builtins.elem (nixpkgs.lib.getName pkg) [ "claude-code" ];
       };
 
-      # One machine = one call to this. Everything shared lives in ./home.nix;
-      # only the genuinely per-machine facts are arguments.
+      # One call per machine. Shared settings live in ./home.nix. Arguments are
+      # the per-machine facts.
       mkHome = { system, username, homeDirectory }:
         home-manager.lib.homeManagerConfiguration {
           pkgs = nixpkgs.legacyPackages.${system};
           modules = [ ./home.nix ];
-          # Passed through to ./home.nix as function arguments.
+          # ./home.nix takes these as function arguments.
           extraSpecialArgs = { inherit username homeDirectory; };
         };
     in
     {
-      # Built with: home-manager switch --flake .#peter@ubuntu-8gb-dev
+      # Apply: home-manager switch --flake .#peter-dev
       homeConfigurations = {
         "peter-dev" = mkHome {
           system = "x86_64-linux";
@@ -47,17 +42,17 @@
         };
       };
 
-      # Build:  nix build .#container
-      # Load:   ./result | podman load
+      # Build: nix build .#container
+      # Load:  ./result | podman load
       packages.${system}.container = pkgs.dockerTools.streamLayeredImage {
         name = "claude-nix";
         tag = "latest";
 
-        # Each store path becomes its own layer, so changing one tool
-        # re-pushes one layer instead of invalidating everything below it.
+        # One layer per store path. A changed tool invalidates its own layer
+        # only.
         contents = with pkgs; [
-          # An image built by Nix is EMPTY by default — no shell, no coreutils,
-          # no /etc/passwd. Everything below is opt-in.
+          # A Nix image starts empty. It has no shell, no coreutils and no
+          # /etc/passwd. Add each one here.
           bash
           coreutils
           fish
@@ -80,8 +75,7 @@
           procps
           which
 
-          # coreutils covers less than people expect — sed/grep/awk/find/tar are
-          # all separate packages. This is roughly "what a distro gave you free".
+          # coreutils excludes sed, grep, awk, find and tar. Add them here.
           gnused
           gnugrep
           gawk
@@ -90,52 +84,63 @@
           gnutar
           gzip
           curl
-          # git/jj shell out to the ssh binary; the remote here is ssh://
+          # git and jj run the ssh binary. The remote uses ssh://.
           openssh
 
-          # Nicer find. Not a drop-in for `find`, so findutils stays above.
+          # fd does not replace find, so findutils stays above.
           fd
 
           python3
           unzip
           patch
 
-          # /usr/bin/env, for `#!/usr/bin/env python3` style shebangs.
+          # /usr/bin/env, for `#!/usr/bin/env python3` shebangs.
           dockerTools.usrBinEnv
 
-          # Locale data. Without it LANG is unset and Unicode-aware sorting and
-          # output misbehave, often quietly.
+          # Locale data. Without it, LANG is unset and Unicode sorting fails
+          # silently.
           glibcLocales
 
           # Editor
           neovim
 
-          # /etc/passwd + /etc/group. Without this most tools error on
-          # "cannot look up current user". Overridden to add `node`, since the
-          # stock version only knows root and nobody.
+          # /etc/passwd and /etc/group. Without them, most tools fail to look up
+          # the current user. The stock version knows root and nobody only, so
+          # add node.
           (dockerTools.fakeNss.override {
             extraPasswdLines = [ "node:x:1000:1000:node:/home/node:/bin/fish" ];
             extraGroupLines = [ "node:x:1000:" ];
           })
 
-          # /etc/ssl/certs — without it every HTTPS call fails.
+          # /etc/ssl/certs. Without it, every HTTPS call fails.
           cacert
+
+          # Nix binaries hold the loader's store path, so they do not need these.
+          # Binaries fetched at run time hold the path /lib64/ld-linux-*.so.2
+          # instead. Examples: uv's CPython, npm native modules, downloaded CLIs.
+          # Without these they fail with "no glibc loader". See fakeRootCommands.
+          glibc
+          stdenv.cc.cc.lib
+          zlib
         ];
 
-        # Runs under fakeroot, so chown works without real privileges. This is
-        # where the Dockerfile's `mkdir -p /workspace /home/node && chown -R`
-        # ends up.
+        # Runs under fakeroot, so chown needs no privileges. This replaces the
+        # Dockerfile's `mkdir -p /workspace /home/node && chown -R`.
         fakeRootCommands = ''
-          # Pre-create every directory podman will mount into. Otherwise podman
-          # creates the missing parents itself, owned by root, and the container
-          # user can't write alongside them.
+          # Create every mount point first. Otherwise podman creates the missing
+          # parents as root and the container user cannot write beside them.
           mkdir -p ./home/node/.config/fish ./home/node/.claude ./workspace
           chown -R 1000:1000 ./home/node ./workspace
 
-          # No base image means no /tmp. 1777 = world-writable with the sticky
-          # bit, so anyone can create files but only delete their own.
+          # No base image means no /tmp. Mode 1777 lets any user create files
+          # and lets each user delete only their own.
           mkdir -p ./tmp ./var/tmp
           chmod 1777 ./tmp ./var/tmp
+
+          # glibc puts the loader at /lib/ld-linux-x86-64.so.2. Foreign binaries
+          # look in /lib64. This symlink makes them run.
+          mkdir -p ./lib64
+          ln -sf ../lib/ld-linux-x86-64.so.2 ./lib64/ld-linux-x86-64.so.2
         '';
 
         config = {
@@ -150,16 +155,19 @@
             "DEVCONTAINER=true"
             "LANG=C.UTF-8"
             "LC_ALL=C.UTF-8"
-            # The claude-code wrapper sets this to 1 via --set-default, which
-            # would auto-update plugins out from under the pinned Superpowers
-            # commit. Overridable precisely because it's a default, not a --set.
+            # The claude-code wrapper sets this to 1 with --set-default. That
+            # auto-updates plugins past the pinned Superpowers commit. A default
+            # is overridable here; a --set value is not.
             "FORCE_AUTOUPDATE_PLUGINS=0"
+            # Foreign binaries also load libstdc++, libz and libm by soname.
+            # Nix binaries carry an RPATH and ignore this variable.
+            "LD_LIBRARY_PATH=/lib"
           ];
         };
       };
 
       devShells.${system}.default = pkgs.mkShell {
-        # Everything here goes on PATH inside the shell, and nowhere else.
+        # These go on PATH inside the shell only.
         packages = with pkgs; [
           # from install.sh
           jujutsu
