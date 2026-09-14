@@ -115,10 +115,8 @@
           # /etc/ssl/certs. Without it, every HTTPS call fails.
           cacert
 
-          # Nix binaries hold the loader's store path, so they do not need these.
-          # Binaries fetched at run time hold the path /lib64/ld-linux-*.so.2
-          # instead. Examples: uv's CPython, npm native modules, downloaded CLIs.
-          # Without these they fail with "no glibc loader". See fakeRootCommands.
+          # Foreign binaries (uv's CPython, npm native modules) load libs by
+          # soname. Nix binaries carry an RPATH and ignore these.
           glibc
           stdenv.cc.cc.lib
           zlib
@@ -139,11 +137,6 @@
           # and lets each user delete only their own.
           mkdir -p ./tmp ./var/tmp
           chmod 1777 ./tmp ./var/tmp
-
-          # glibc puts the loader at /lib/ld-linux-x86-64.so.2. Foreign binaries
-          # look in /lib64. This symlink makes them run.
-          mkdir -p ./lib64
-          ln -sf ../lib/ld-linux-x86-64.so.2 ./lib64/ld-linux-x86-64.so.2
         '';
 
         config = {
@@ -162,8 +155,7 @@
             # auto-updates plugins past the pinned Superpowers commit. A default
             # is overridable here; a --set value is not.
             "FORCE_AUTOUPDATE_PLUGINS=0"
-            # Foreign binaries also load libstdc++, libz and libm by soname.
-            # Nix binaries carry an RPATH and ignore this variable.
+            # Lets foreign binaries find libstdc++ and friends.
             "LD_LIBRARY_PATH=/lib"
           ];
         };
