@@ -1357,3 +1357,24 @@ def test_blob_refuses_what_it_should(client: TestClient, config: DiffwebConfig, 
     # Option-shaped inputs never reach git.
     assert client.get(f"/api/w/{wt}/blob", params={"rev": "--output=x", "path": "logo.png"}).status_code == 400
     assert client.get(f"/api/w/{wt}/blob", params={"rev": WORKTREE, "path": "--x.png"}).status_code == 400
+
+
+# --- PR chip colours --------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("state", "draft", "status", "colour"),
+    [
+        ("OPEN", False, "open", "var(--add)"),
+        ("OPEN", True, "draft", "var(--dim)"),
+        ("MERGED", False, "merged", "#8957e5"),
+        ("CLOSED", False, "closed", "var(--del)"),
+    ],
+)
+def test_pr_chip_status_has_a_colour(state: str, draft: bool, status: str, colour: str) -> None:
+    """gh's state becomes the chip's class, and every class is styled: merged
+    purple, closed red, open green, draft grey."""
+    pr = forge.PullRequest(number=1, title="t", url="u", state=state, draft=draft)
+    assert pr.status == status
+    css = (Path(__file__).parent.parent / "diffweb" / "static" / "app.css").read_text()
+    assert re.search(rf"\.pr-{status}\s*\{{\s*color:\s*{re.escape(colour)}", css), f".pr-{status} is not {colour}"
