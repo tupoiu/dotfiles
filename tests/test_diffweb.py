@@ -1250,3 +1250,110 @@ def test_remerge_patch_renders_despite_the_conflict_header_line() -> None:
     """git puts a `remerge CONFLICT` line in the extended header, which diff2html
     has never heard of. It must be skipped, not mistaken for the patch."""
     assert render_order(REMERGE_PATCH) == "..-----+."
+
+
+# --- images ---------------------------------------------------------------
+
+PNG_1PX = (
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
+    b"\x00\x00\x00\rIDATx\x9cc\xf8\xcf\xc0\xf0\x1f\x00\x05\x00\x01\xff\xa1\x8e\x8c\x00\x00\x00\x00IEND\xaeB`\x82"
+)
+
+
+def add_images(world: dict[str, Path]) -> dict[str, Path]:
+    """On the feature branch: a committed then re-committed png, a renamed png,
+    a staged edit and an unstaged edit, so every end of a range has a picture."""
+    repo = world["repo"]
+    (repo / "logo.png").write_bytes(PNG_1PX)
+    (repo / "pics").mkdir()
+    (repo / "pics" / "old.png").write_bytes(PNG_1PX)
+    git(repo, "add", "-A")
+    git(repo, "commit", "-m", "add images")
+    (repo / "logo.png").write_bytes(PNG_1PX + b"v2")
+    git(repo, "mv", "pics/old.png", "pics/new.png")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-m", "change images")
+    (repo / "logo.png").write_bytes(PNG_1PX + b"staged")
+    git(repo, "add", "logo.png")
+    (repo / "logo.png").write_bytes(PNG_1PX + b"disk")
+    return world
+
+
+@pytest.mark.parametrize(
+    ("name", "target"),
+    [
+        ("a.png", "a.png"),
+        ("img/{keep.png => moved.png}", "img/moved.png"),
+        ("{old => new}/x.png", "new/x.png"),
+        ("old.png => new.png", "new.png"),
+    ],
+)
+def test_rename_target(name: str, target: str) -> None:
+    assert gitio.rename_target(name) == target
+
+
+def test_is_image_by_extension() -> None:
+    assert gitio.is_image("a/b.PNG") and gitio.is_image("logo.svg") and gitio.is_image("x.webp")
+    assert not gitio.is_image("a.txt") and not gitio.is_image("Makefile")
+
+
+def test_diff_rows_carry_image_status_and_old_path(client: TestClient, config: DiffwebConfig, world: dict[str, Path]) -> None:
+    add_images(world)
+    from diffweb import app as app_module
+
+    app_module.reset_for_tests()
+    data = client.get(f"/api/w/{wt_id(config, 'proj')}/diff", params={"start": "HEAD~1", "end": "HEAD"}).json()
+    rows = {f["path"]: f for f in data["files"]}
+    assert rows["logo.png"]["image"] is True and rows["logo.png"]["binary"] is True
+    assert rows["logo.png"]["status"] == "M" and rows["logo.png"]["old_path"] == "logo.png"
+    moved = rows["pics/{old.png => new.png}"]
+    assert moved["status"] == "R" and moved["old_path"] == "pics/old.png" and moved["image"] is True
+    # Text rows are unaffected apart from the two new keys.
+    whole = client.get(f"/api/w/{wt_id(config, 'proj')}/diff").json()
+    a = next(f for f in whole["files"] if f["path"] == "a.txt")
+    assert a["image"] is False and a["status"] == "M" and a["old_path"] == "a.txt"
+
+
+def test_blob_serves_each_end_of_a_range(client: TestClient, config: DiffwebConfig, world: dict[str, Path]) -> None:
+    add_images(world)
+    from diffweb import app as app_module
+
+    app_module.reset_for_tests()
+    wt = wt_id(config, "proj")
+    head = git(world["repo"], "rev-parse", "HEAD").strip()
+
+    r = client.get(f"/api/w/{wt}/blob", params={"rev": head, "path": "logo.png"})
+    assert r.status_code == 200 and r.headers["content-type"] == "image/png"
+    assert r.content == PNG_1PX + b"v2"
+    assert "immutable" in r.headers["cache-control"]
+    assert r.headers["x-content-type-options"] == "nosniff"
+
+    r = client.get(f"/api/w/{wt}/blob", params={"rev": "HEAD~1", "path": "pics/old.png"})
+    assert r.status_code == 200 and r.content == PNG_1PX
+    assert r.headers["cache-control"] == "no-store"  # HEAD~1 moves; only a sha is pinned
+
+    r = client.get(f"/api/w/{wt}/blob", params={"rev": INDEX, "path": "logo.png"})
+    assert r.status_code == 200 and r.content == PNG_1PX + b"staged"
+    r = client.get(f"/api/w/{wt}/blob", params={"rev": WORKTREE, "path": "logo.png"})
+    assert r.status_code == 200 and r.content == PNG_1PX + b"disk"
+    assert r.headers["cache-control"] == "no-store"
+
+
+def test_blob_refuses_what_it_should(client: TestClient, config: DiffwebConfig, world: dict[str, Path], tmp_path: Path) -> None:
+    add_images(world)
+    from diffweb import app as app_module
+
+    app_module.reset_for_tests()
+    wt = wt_id(config, "proj")
+    # Not an image: never served, even though it exists.
+    assert client.get(f"/api/w/{wt}/blob", params={"rev": WORKTREE, "path": "a.txt"}).status_code == 415
+    # Absent at that rev.
+    assert client.get(f"/api/w/{wt}/blob", params={"rev": "HEAD~1", "path": "pics/new.png"}).status_code == 404
+    # Reaching outside the worktree, by path or by symlink.
+    (tmp_path / "secret.png").write_bytes(PNG_1PX)
+    assert client.get(f"/api/w/{wt}/blob", params={"rev": WORKTREE, "path": "../secret.png"}).status_code == 404
+    (world["repo"] / "link.png").symlink_to(tmp_path / "secret.png")
+    assert client.get(f"/api/w/{wt}/blob", params={"rev": WORKTREE, "path": "link.png"}).status_code == 404
+    # Option-shaped inputs never reach git.
+    assert client.get(f"/api/w/{wt}/blob", params={"rev": "--output=x", "path": "logo.png"}).status_code == 400
+    assert client.get(f"/api/w/{wt}/blob", params={"rev": WORKTREE, "path": "--x.png"}).status_code == 400

@@ -167,10 +167,22 @@ async function loadCommits() {
 
 let currentReview = {};
 let shas = {};
-let fileInfo = {};          // path -> {added, removed, binary, noisy}
+let fileInfo = {};          // path -> {added, removed, binary, noisy, image, status, old_path}
+let currentRange = {};      // {start, end, remerge} as the server resolved them
 let seededNoise = false;    // auto-collapse noisy files once, not on every render
 
+// Anything that throws mid-render (a missing vendored library, a diff2html
+// parse error) would otherwise leave "loading diff…" up forever.
 async function render() {
+  try {
+    await renderDiff();
+  } catch (err) {
+    console.error(err);
+    status("loading diff failed");
+  }
+}
+
+async function renderDiff() {
   syncUrl();
   status("loading diff…", true);
   const q = { base: $base.value };
@@ -190,6 +202,7 @@ async function render() {
 
   currentReview = data.review || {};
   shas = data.shas || {};
+  currentRange = { start: data.start, end: data.end, remerge: !!data.remerge };
   fileInfo = Object.fromEntries((data.files || []).map((f) => [f.path, f]));
   seedNoise(data.files || []);
   const files = data.files || [];
@@ -264,8 +277,12 @@ function decorateFiles(root) {
   for (const wrapper of root.querySelectorAll(".d2h-file-wrapper")) {
     const nameEl = wrapper.querySelector(".d2h-file-name");
     if (!nameEl) continue;
-    const path = nameEl.textContent.trim();
+    // diff2html spells a rename `dir/{old → new}` where git's numstat says
+    // `dir/{old => new}`; the numstat spelling is the key everywhere else.
+    const path = nameEl.textContent.trim().replace(" → ", " => ");
     wrapper.dataset.path = path;
+    // Review state and blob shas come from `git diff --raw`, keyed on the plain new path.
+    const reviewKey = renameTarget(path);
     const header = wrapper.querySelector(".d2h-file-header");
 
     const chevron = document.createElement("button");
@@ -288,6 +305,7 @@ function decorateFiles(root) {
         ? '<span class="dim">binary</span>'
         : `<span class="add">+${info.added}</span> <span class="del">−${info.removed}</span>`;
       header.appendChild(stats);
+      if (info.image) queueImagePane(wrapper, info);
       if (info.noisy) {
         const tag = document.createElement("span");
         tag.className = "noise-tag";
@@ -297,7 +315,7 @@ function decorateFiles(root) {
       }
     }
 
-    const stateForFile = currentReview[path];
+    const stateForFile = currentReview[reviewKey];
     if (stateForFile !== undefined) {
       const label = document.createElement("label");
       label.className = "review-tick";
@@ -322,17 +340,89 @@ function decorateFiles(root) {
         // Keep the filter honest without waiting for the next render.
         wrapper.classList.toggle("is-reviewed", box.checked);
         applyHideReviewed();
-        fetch(api("reviewed", { path, blob_sha: shaFor(path), reviewed: box.checked }), { method: "POST" });
+        fetch(api("reviewed", { path: reviewKey, blob_sha: shaFor(reviewKey), reviewed: box.checked }),
+              { method: "POST" });
       });
     }
 
     wrapper.classList.toggle("collapsed", collapsed.has(path));
-    wrapper.classList.toggle("is-reviewed", currentReview[path] === "reviewed");
+    wrapper.classList.toggle("is-reviewed", currentReview[reviewKey] === "reviewed");
   }
   saveCollapsed();
   refreshToggleAll();
   window.diffwebKeys?.refresh();
   applyHideReviewed();
+}
+
+// --- images ---------------------------------------------------------------
+//
+// git can only say "Binary files differ" about an image, so the page fetches
+// each side from /blob and shows them next to each other. The panes are added
+// after the diff has painted, and each <img> is loading="lazy", so a branch
+// full of screenshots costs nothing until you scroll to one.
+
+function blobUrl(rev, path) {
+  return api("blob", { rev, path });
+}
+
+function queueImagePane(wrapper, info) {
+  requestAnimationFrame(() => addImagePane(wrapper, info));
+}
+
+function addImagePane(wrapper, info) {
+  const body = wrapper.querySelector(".d2h-file-diff, .d2h-files-diff");
+  if (!body || wrapper.querySelector(".image-diff")) return;
+  const newPath = renameTarget(info.path);
+  const sides = [];
+  // The remerge diff's "before" is the mechanical merge, which exists nowhere
+  // we can fetch it from, so only the resolved result is shown.
+  if (info.status !== "A" && !currentRange.remerge) {
+    sides.push({ label: "before", url: blobUrl(currentRange.start, info.old_path || newPath), cls: "del" });
+  }
+  if (info.status !== "D") {
+    sides.push({ label: "after", url: blobUrl(currentRange.end, newPath), cls: "add" });
+  }
+  const pane = document.createElement("div");
+  pane.className = "image-diff";
+  for (const side of sides) {
+    const fig = document.createElement("figure");
+    fig.className = `image-side ${side.cls}`;
+    const cap = document.createElement("figcaption");
+    cap.textContent = side.label;
+    const link = document.createElement("a");
+    link.href = side.url;
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.title = "open full size";
+    const img = document.createElement("img");
+    img.loading = "lazy";
+    img.decoding = "async";
+    img.alt = `${side.label}: ${newPath}`;
+    img.src = side.url;
+    img.addEventListener("load", () => {
+      cap.textContent = `${side.label} · ${img.naturalWidth}×${img.naturalHeight}`;
+    });
+    img.addEventListener("error", () => {
+      cap.textContent = `${side.label} · could not load`;
+      fig.classList.add("failed");
+    });
+    link.appendChild(img);
+    fig.append(cap, link);
+    pane.appendChild(fig);
+  }
+  // The pane follows the body rather than sitting in it: side-by-side's body
+  // is a two-column flex row that would squeeze the pictures into a third.
+  // A binary file's body is only the "Binary file" row, which the pictures
+  // replace; an SVG keeps its text diff and gets the pictures underneath.
+  if (info.binary) body.remove();
+  wrapper.appendChild(pane);
+}
+
+// git's numstat spelling of a rename, `dir/{old => new}.ext`, back to the new path.
+function renameTarget(name) {
+  const m = name.match(/^(.*)\{(.*) => (.*)\}(.*)$/);
+  if (m) return `${m[1]}${m[3]}${m[4]}`;
+  return name.includes(" => ") ? name.split(" => ")[1] : name;
 }
 
 // Late in a review most files are ticked off; hiding them leaves just the work.

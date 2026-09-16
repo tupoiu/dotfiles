@@ -18,6 +18,7 @@ See `diffweb/README.md` for how to run it and `diffweb/ROADMAP.md` for ideas.
 - [x] Diff page: diff2html render, start/end commit picker, range in the URL — file counts match `git diff --stat` by hand
 - [x] Lazy per-file loading over the size limits (`diffweb/app.py:168`) — `test_diff_endpoint_lazy_when_over_limit`
 - [x] Structural diff toggle behind `features.structural` (`diffweb/gitio.py:225`) — renders difftastic output; returns install guidance, not an error, when `difft` is absent
+- [x] Images in diffs: before/after panes fed by `/api/w/<id>/blob`, lazy-loaded (`diffweb/app.py` `api_blob`, `worktree.js` `addImagePane`) — `test_blob_serves_each_end_of_a_range`, `test_blob_refuses_what_it_should`; screenshots of changed, added, deleted, renamed and SVG files in both themes and side-by-side
 - [x] Reviewed state in SQLite, keyed on blob sha — tick survives reload, file rebadges "changed" when the blob moves
 - [x] Live reload over SSE (`diffweb/app.py:209`) — editing a tracked file updates the open page within ~2s, scroll position kept
 - [x] Collapsible file diffs — header/chevron click, collapse-all, state persisted per worktree in `localStorage` (`diffweb/static/worktree.js:26`); survives re-render and reload
@@ -37,6 +38,20 @@ See `diffweb/README.md` for how to run it and `diffweb/ROADMAP.md` for ideas.
 - [ ] code-server + GitLens comparison — never spiked, nothing was running on this VM
 
 ## Decisions / gotchas
+
+- **Images are fetched per side by `(rev, path)`, not by blob sha.** The
+  worktree end has no sha to fetch by (`--raw` reports zeros and we only
+  `hash-object` it, never write it), and the index is `:path`, so one endpoint
+  taking the same three kinds of range end as everything else was simpler than
+  two. Only a 40-hex `rev` gets an `immutable` cache header; `HEAD` moves.
+- **A `loading="lazy"` image inside a collapsed file never loads**, because
+  `display: none` gives it no viewport position. That is the behaviour we want,
+  but a browser check that waits for every image to be `complete` hangs on it;
+  wait only for the visible ones.
+- **This VM's git is 2.34, which predates `--remerge-diff` (2.36).** The five
+  remerge tests fail here on a clean checkout, with an empty diff rather than an
+  error, because `_try_git` swallows the unknown-option failure. Unrelated to
+  whatever you are working on if that is all that is red.
 
 - **The index is a third end of a range, not a start.** `end=INDEX` becomes
   `git diff --cached <start>`, so it needs its own sentinel beside `WORKTREE`

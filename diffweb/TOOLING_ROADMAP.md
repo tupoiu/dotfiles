@@ -22,6 +22,31 @@ Format - one entry per session, newest first:
 
 ---
 
+## 2026-09-16 - images in diffs
+
+- `poe diffweb-test` / `world` fixture - helped. A helper that commits, renames,
+  stages and dirties a png on top of `world` gave every end of a range a picture
+  to fetch, and the suite ran in six seconds. Five remerge tests fail on this
+  machine regardless (git 2.34, no `--remerge-diff`); it took a clean worktree
+  at HEAD to prove that was not me.
+  **Improve:** skip the remerge tests when `git --version` is below 2.36, with
+  the reason in the skip message.
+- `poe diffweb-shot` - helped once it ran, and caught the real bug: in
+  side-by-side the image pane was squeezed into a third column, which no test
+  would ever have seen. Getting it to run cost more than the feature. Chromium
+  needed `libnss3`/`libnspr4`, `sudo` wants a password, so the fix was
+  `apt-get download libnss3 libnspr4`, `dpkg -x` into the scratchpad and
+  `LD_LIBRARY_PATH` - no root needed. Then `--out <dir>` was read as a *page
+  path* because it starts with `/`, producing two bogus 404 "page errors".
+  **Improve:** skip the values of `--out`/`--port` when collecting paths; print
+  the no-sudo library recipe alongside the `--with-deps` one; a `--select`
+  flag and a way to set `localStorage` (side-by-side lives there) would have
+  saved a throwaway Playwright script, which also had to live *inside*
+  `diffweb/` because ESM ignores `NODE_PATH`.
+- `poe diffweb` with a throwaway `DIFFWEB_CONFIG` - helped; same boilerplate
+  complaint as every previous entry. Also: `pkill -f "python -m diffweb"` kills
+  the shell that runs it, because that shell's own command line matches.
+
 ## 2026-09-10 - remerge diff for merge commits
 
 - `poe diffweb-test` / the `world` fixture - helped. Building a `merged` fixture

@@ -6,6 +6,7 @@ import concurrent.futures
 import fnmatch
 import glob
 import hashlib
+import mimetypes
 import os
 import re
 import shutil
@@ -51,6 +52,14 @@ def _try_git(cwd: str | os.PathLike[str], *args: str) -> str | None:
         return run_git(cwd, *args)
     except GitError:
         return None
+
+
+def run_git_bytes(cwd: str | os.PathLike[str], *args: str) -> bytes:
+    """Like run_git, for output that is not text - blob contents, mostly."""
+    proc = subprocess.run(["git", *args], cwd=str(cwd), capture_output=True)
+    if proc.returncode != 0:
+        raise GitError(f"git {' '.join(args)} failed in {cwd}: {proc.stderr.decode(errors='replace').strip()}")
+    return proc.stdout
 
 
 def validate_ref(ref: str) -> str:
@@ -224,34 +233,85 @@ def _parse_numstat(out: str) -> list[dict[str, object]]:
                 "added": None if added == "-" else int(added),
                 "removed": None if removed == "-" else int(removed),
                 "binary": added == "-",
+                "image": is_image(rename_target(name)),
             }
         )
     return rows
+
+
+# Without -z, git spells a rename as `dir/{old => new}.ext`, or `old => new`
+# when the two names share nothing. Everything else keys on the new name.
+_RENAME_RE = re.compile(r"^(.*)\{(.*) => (.*)\}(.*)$")
+
+
+def rename_target(numstat_name: str) -> str:
+    """The post-image path of a numstat row, undoing git's `{old => new}` shorthand."""
+    m = _RENAME_RE.match(numstat_name)
+    if m:
+        prefix, _old, new, suffix = m.groups()
+        return f"{prefix}{new}{suffix}"
+    if " => " in numstat_name:
+        return numstat_name.split(" => ", 1)[1]
+    return numstat_name
+
+
+def is_image(path: str) -> bool:
+    """Judged by extension: it decides only whether the page asks for a preview."""
+    kind, _ = mimetypes.guess_type(path)
+    return bool(kind and kind.startswith("image/"))
 
 
 def numstat(path: str, start: str, end: str) -> list[dict[str, object]]:
     return _parse_numstat(_try_git(path, "diff", "--numstat", "-M", "-C", *_diff_args(start, end)) or "")
 
 
-def _parse_raw(path: str, out: str) -> dict[str, str]:
-    shas: dict[str, str] = {}
+def _parse_raw(path: str, out: str) -> dict[str, dict[str, str]]:
+    """`git diff --raw` per post-image path: status letter, old path and blob sha."""
+    changes: dict[str, dict[str, str]] = {}
     for line in out.splitlines():
         meta, _, names = line.partition("\t")
         if not names:
             continue
-        name = names.split("\t")[-1]
-        parts = meta.split()
-        dst = parts[3] if len(parts) > 3 else ""
+        parts = names.split("\t")
+        old, name = parts[0], parts[-1]
+        fields = meta.split()
+        dst = fields[3] if len(fields) > 3 else ""
+        status = fields[4][:1] if len(fields) > 4 else ""
         if set(dst) <= {"0"}:
             # Uncommitted: git reports zeros, so hash what is on disk.
             dst = (_try_git(path, "hash-object", "--", name) or "").strip() or "worktree"
-        shas[name] = dst
-    return shas
+        changes[name] = {"status": status, "old_path": old, "sha": dst}
+    return changes
+
+
+def raw_changes(path: str, start: str, end: str) -> dict[str, dict[str, str]]:
+    return _parse_raw(path, _try_git(path, "diff", "--raw", "-M", "-C", *_diff_args(start, end)) or "")
 
 
 def blob_shas(path: str, start: str, end: str) -> dict[str, str]:
     """Post-image blob sha per file, used to tell 'reviewed' from 'changed since'."""
-    return _parse_raw(path, _try_git(path, "diff", "--raw", "-M", "-C", *_diff_args(start, end)) or "")
+    return {name: c["sha"] for name, c in raw_changes(path, start, end).items()}
+
+
+def blob_bytes(path: str, rev: str, file: str) -> bytes | None:
+    """The contents of `file` at `rev`, which may be a commit, the index or the worktree.
+
+    None when the file does not exist there. Worktree reads are pinned inside
+    the worktree so a symlink or `..` cannot reach past it.
+    """
+    if file.startswith("-") or "\0" in file:
+        raise ValueError(f"refusing suspicious path: {file!r}")
+    if rev == WORKTREE:
+        root = Path(path).resolve()
+        target = (root / file).resolve()
+        if not target.is_relative_to(root) or not target.is_file():
+            return None
+        return target.read_bytes()
+    spec = f":{file}" if rev == INDEX else f"{resolve_ref(path, rev)}:{file}"
+    try:
+        return run_git_bytes(path, "cat-file", "blob", spec)
+    except GitError:
+        return None
 
 
 # --- merge commits ---------------------------------------------------------
@@ -288,8 +348,12 @@ def remerge_numstat(path: str, sha: str) -> list[dict[str, object]]:
     return _parse_numstat(_try_git(path, *_remerge_args(sha, None, "--numstat")) or "")
 
 
-def remerge_blob_shas(path: str, sha: str) -> dict[str, str]:
+def remerge_raw_changes(path: str, sha: str) -> dict[str, dict[str, str]]:
     return _parse_raw(path, _try_git(path, *_remerge_args(sha, None, "--raw")) or "")
+
+
+def remerge_blob_shas(path: str, sha: str) -> dict[str, str]:
+    return {name: c["sha"] for name, c in remerge_raw_changes(path, sha).items()}
 
 
 def structural_diff(path: str, start: str, end: str, difft: str | None = None) -> str:

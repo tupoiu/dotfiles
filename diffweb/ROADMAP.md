@@ -72,6 +72,10 @@ Scratchpad. Add anything, however half-formed - nothing here is committed to.
 
 ## Ideas
 
+- Image compare modes beyond side-by-side: onion-skin, swipe and a pixel-diff
+  heatmap, the way GitHub offers. The blob endpoint and the per-side pane are
+  in place; this is client-side work on top of them.
+
 - AI-generated change summary per worktree, shown on the catalog row.
 - Stacked view: one section per commit rather than one flattened range.
 - Merge commits: the remerge/true-diff split only applies to a single merge

@@ -6,6 +6,7 @@ import asyncio
 import concurrent.futures
 import hashlib
 import json
+import mimetypes
 import shutil
 import time
 from pathlib import Path
@@ -250,8 +251,15 @@ def api_diff(
             row["noisy"] = gitio.is_noisy(str(row["path"]), config.noise.collapse_by_default)
 
     with timer.stage("shas"):
-        shas = gitio.remerge_blob_shas(wt.path, e) if remerge else gitio.blob_shas(wt.path, s, e)
+        changes = gitio.remerge_raw_changes(wt.path, e) if remerge else gitio.raw_changes(wt.path, s, e)
+        shas = {name: c["sha"] for name, c in changes.items()}
         review = state.review_status(wt_id, shas) if config.features.reviewed_state else {}
+        # The page fetches an image's two sides by path, so a rename needs to
+        # know what the file was called before.
+        for row in stats:
+            change = changes.get(gitio.rename_target(str(row["path"])), {})
+            row["status"] = change.get("status", "")
+            row["old_path"] = change.get("old_path", "")
 
     if renderer == "structural":
         if not config.features.structural:
@@ -391,6 +399,32 @@ def api_set_base(wt_id: str, base: str, config: DiffwebConfig = Depends(get_conf
     gitio.resolve_ref(wt.path, base)  # never persist a base we cannot resolve
     get_state().set_base_ref(wt_id, base)
     return {"ok": True, "base": base}
+
+
+@app.get("/api/w/{wt_id}/blob")
+def api_blob(wt_id: str, rev: str, path: str, config: DiffwebConfig = Depends(get_config)) -> Any:
+    """One side of an image diff: `path` as it is at `rev`.
+
+    `rev` is a commit, the index or the worktree - the same ends a range has.
+    Only images are served, so this is not a generic file-read endpoint.
+    """
+    wt = find_worktree(wt_id, config)
+    kind, _ = mimetypes.guess_type(path)
+    if not kind or not kind.startswith("image/"):
+        raise HTTPException(415, f"{path} is not an image")
+    body = gitio.blob_bytes(wt.path, rev, path)
+    if body is None:
+        raise HTTPException(404, f"{path} does not exist at {rev}")
+    # Only a full sha names something that can never change; HEAD, the index
+    # and the worktree all move.
+    pinned = len(rev) == 40 and all(c in "0123456789abcdef" for c in rev)
+    headers = {
+        "Cache-Control": "public, max-age=31536000, immutable" if pinned else "no-store",
+        "X-Content-Type-Options": "nosniff",
+        # An SVG is a document: sandbox it so nothing in it can run.
+        "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+    }
+    return Response(content=body, media_type=kind, headers=headers)
 
 
 @app.post("/api/w/{wt_id}/reviewed")

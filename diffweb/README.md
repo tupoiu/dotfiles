@@ -90,6 +90,19 @@ tick rides in the URL as `remerge=0` but is not remembered: the resolution is
 the default every time. Merge commits are marked `[merge]` in the from/to
 pickers. A range that merely *ends* at a merge is a range, and unaffected.
 
+**Images.** git can only say `Binary files differ` about a picture, so each
+image file in the diff gets a pane showing it *before* and *after*, side by side
+on a checkerboard: both sides for a change or rename, one side for an added or
+deleted file, and for an SVG the text diff with the two renderings underneath.
+Each picture is a link to itself at full size and shows its pixel dimensions
+once loaded. The pictures come from `/api/w/<id>/blob?rev=<sha|INDEX|WORKTREE>&path=`,
+which serves only `image/*` types, pins worktree reads inside the worktree, and
+sandboxes SVGs so nothing in one can run. The `<img>`s are added after the diff
+has painted and are `loading="lazy"`, so a branch full of screenshots costs
+nothing until you scroll to one; a collapsed file's pictures never load at
+all. On a merge commit's remerge view only the *after* side is shown, because the
+*before* is the mechanical merge, which exists nowhere we can fetch it from.
+
 **Reviewed state.** Tick a file to collapse it. The tick is stored against that
 file's current blob sha, so when the file changes afterwards it reopens badged
 "changed since you reviewed". State lives in SQLite, keyed by worktree.
@@ -313,6 +326,14 @@ The established shape, worth following:
   may not revalidate at all: the new HTML arrives, the old JS runs, and a new
   control renders but does nothing. Every `/static` URL therefore goes through
   the `asset()` template global, which stamps it with the file's mtime.
+- **Side-by-side's file body is a two-column flex row.** Anything appended
+  *inside* `.d2h-files-diff` becomes a squeezed third column; the image pane
+  is a sibling of the body, after it, and the collapse rule hides it explicitly.
+- **git names a rename three ways.** `--numstat` says `dir/{old => new}`,
+  `--raw` gives `old\tnew`, and diff2html renders `dir/{old → new}`. File
+  stats, review state and blob shas are keyed on the first two, so the page
+  normalises the header text to the numstat spelling and `rename_target()`
+  turns that into the plain new path.
 - **Don't rely on an emoji for a functional control**; a box with no glyph is a
   real outcome on a bare Linux box. Use an inline SVG.
 
