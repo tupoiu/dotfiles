@@ -65,6 +65,9 @@
 
           bun
           claude-code
+          # pi agent harness. Its wrapper pins its own node, so no nodejs here.
+          # ~/.pi (auth, sessions) is mounted by claude-nix.fish.
+          pi-coding-agent
 
           # from install.sh / the Dockerfile
           uv
