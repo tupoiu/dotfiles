@@ -130,7 +130,8 @@
         fakeRootCommands = ''
           # Create every mount point first. Otherwise podman creates the missing
           # parents as root and the container user cannot write beside them.
-          mkdir -p ./home/node/.config/fish ./home/node/.config/jj \
+          mkdir -p ./home/node/.config/fish/conf.d \
+            ./home/node/.config/fish/functions ./home/node/.config/jj \
             ./home/node/.claude ./home/node/.pi \
             ./home/node/.cache/uv ./home/node/.cache/fish \
             ./home/node/venv ./workspace
