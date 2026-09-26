@@ -19,8 +19,8 @@ addopts = "-n 6"
 [tool.poe.tasks]
 # We use cgroupfs because WSL doesn't work normally with cgroups
 build-claude = "podman build --cgroup-manager=cgroupfs -t claude-default claude-docker"
-# streamLayeredImage's output is a single executable file, not a bin/ directory,
-# so `nix run` can't execute it — build an out-link outside the repo and pipe it.
-build-nix.shell = "nix build .#container --out-link /tmp/claude-nix-stream && /tmp/claude-nix-stream | podman load"
+# Streams the same image as streamLayeredImage's wrapper. It caches layer
+# digests, so each layer is tarred once, not twice.
+build-nix.shell = "python3 nix/stream_cached.py | podman load"
 build-playwright = "podman build --cgroup-manager=cgroupfs -t playwright-default --build-arg BASE_IMAGE=localhost/claude-default:latest playwright-docker"
 test-claude = {cmd = "pytest tests/", executor = "uv" }
