@@ -14,6 +14,7 @@
   # These land on PATH permanently, unlike the devShell in flake.nix.
   home.packages = with pkgs; [
     jujutsu
+    git-branchless
     uv
     ripgrep
     zellij

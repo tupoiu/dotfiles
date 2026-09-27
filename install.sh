@@ -12,6 +12,7 @@ sudo apt install -y bubblewrap # sandbox backend Claude Code shells out to on Li
 cargo install cargo-binstall
 
 cargo binstall -y jj-cli
+cargo binstall -y git-branchless
 cargo binstall -y uv
 cargo binstall -y ripgrep
 cargo binstall -y zellij        # optional
