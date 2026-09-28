@@ -12,7 +12,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-from ansi2html import Ansi2HTMLConverter
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import (
     HTMLResponse,
@@ -264,38 +263,41 @@ def api_diff(
     if renderer == "structural":
         if not config.features.structural:
             raise HTTPException(400, "structural diff is disabled in config")
-        try:
-            ansi = gitio.structural_diff(wt.path, s, e, config.tools.difft_path)
-        except FileNotFoundError:
-            return JSONResponse(
-                {"error": "difft not found. Install it with: cargo binstall difftastic"}, status_code=503
-            )
-        html = Ansi2HTMLConverter(inline=True, dark_bg=True).convert(ansi, full=False)
-        return {"renderer": "structural", "html": html, "files": stats, "review": review, "shas": shas}
-
-    with timer.stage("diff"):
-        if files:
-            diff = (
-                gitio.remerge_diff_text(wt.path, e, files)
-                if remerge
-                else gitio.diff_text(wt.path, s, e, files)
-            )
-            lazy = False
-        else:
-            # One `git diff`. Sizing it with a second, identical `git diff` whose
-            # output was thrown away doubled the most expensive stage of the
-            # request, and saved no memory either - the subprocess buffers the
-            # whole output regardless.
-            diff = cached_diff(wt.path, s, e, config.limits.max_inline_diff_bytes, remerge)
-            lazy = (
-                len(diff.encode()) > config.limits.max_inline_diff_bytes
-                or len(stats) > config.limits.max_inline_files
-            )
-            if lazy:
-                diff = ""
+        # difftastic's verdict, spliced into git's patch as ordinary unified
+        # diff text, so the page draws it exactly like a line diff.
+        with timer.stage("diff"):
+            try:
+                diff = gitio.structural_diff(wt.path, s, e, config.tools.difft_path, files)
+            except FileNotFoundError:
+                return JSONResponse(
+                    {"error": "difft not found. Install it with: cargo binstall difftastic"},
+                    status_code=503,
+                )
+        lazy = False
+    else:
+        with timer.stage("diff"):
+            if files:
+                diff = (
+                    gitio.remerge_diff_text(wt.path, e, files)
+                    if remerge
+                    else gitio.diff_text(wt.path, s, e, files)
+                )
+                lazy = False
+            else:
+                # One `git diff`. Sizing it with a second, identical `git diff` whose
+                # output was thrown away doubled the most expensive stage of the
+                # request, and saved no memory either - the subprocess buffers the
+                # whole output regardless.
+                diff = cached_diff(wt.path, s, e, config.limits.max_inline_diff_bytes, remerge)
+                lazy = (
+                    len(diff.encode()) > config.limits.max_inline_diff_bytes
+                    or len(stats) > config.limits.max_inline_files
+                )
+                if lazy:
+                    diff = ""
 
     payload = {
-        "renderer": "line",
+        "renderer": renderer,
         "start": s,
         "end": e,
         "base": base,

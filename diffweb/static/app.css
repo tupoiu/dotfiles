@@ -84,11 +84,6 @@ input, select {
 .summary .warn { color: var(--del); }
 .summary .merge-note { color: var(--accent); }
 .summary .merge-note code { font-size: 12px; }
-/* difftastic's palette is tuned for a dark terminal, and the ANSI colours are
-   baked in as inline styles, so this block stays dark in both themes. */
-.difft { overflow-x: auto; background: #0e1116; color: #d7dde5; padding: 12px;
-         border-radius: 8px; font: 12px/1.45 ui-monospace, monospace; }
-
 /* Collapsing and review state, layered on diff2html's own file wrappers.
    Side-by-side uses .d2h-files-diff, line-by-line uses .d2h-file-diff. */
 .d2h-file-wrapper.collapsed .d2h-file-diff,

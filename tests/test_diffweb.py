@@ -7,6 +7,7 @@ no ~/code at all.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -640,11 +641,119 @@ def test_structural_reports_missing_difft(client: TestClient, config: DiffwebCon
 
 @pytest.mark.skipif(not shutil.which("difft"), reason="difftastic is an optional extra")
 def test_structural_renders(client: TestClient, config: DiffwebConfig, tmp_path: Path) -> None:
+    """The structural view is ordinary unified diff text, drawn by the same renderer."""
     wid = wt_id(config, "proj")
     _enable_structural(tmp_path)
     body = client.get(f"/api/w/{wid}/diff", params={"renderer": "structural"}).json()
     assert body["renderer"] == "structural"
-    assert "c.txt" in body["html"]
+    assert "html" not in body
+    assert "diff --git a/c.txt b/c.txt" in body["diff"]
+    assert body["files"] and body["lazy"] is False
+
+
+@pytest.mark.skipif(not shutil.which("difft"), reason="difftastic is an optional extra")
+def test_structural_hides_a_pure_reformat(world: dict[str, Path]) -> None:
+    """Reindenting a function is a whole-file line diff but no structural change:
+    the file keeps its header (so it is listed) and loses its hunks."""
+    repo = world["repo"]
+    commit(repo, "mod.py", "def f(x):\n  return x\n\ndef g():\n  return 2\n", "add mod")
+    (repo / "mod.py").write_text("def f(x):\n    return x\n\n\ndef g():\n    return 2\n")
+    text = gitio.structural_diff(str(repo), "HEAD", WORKTREE)
+    assert "diff --git a/mod.py b/mod.py" in text
+    assert "@@" not in text.split("diff --git a/mod.py")[1]
+    assert "+" + "    return x" not in text
+
+
+@pytest.mark.skipif(not shutil.which("difft"), reason="difftastic is an optional extra")
+def test_structural_marks_only_the_syntactic_change(world: dict[str, Path]) -> None:
+    repo = world["repo"]
+    commit(repo, "mod.py", "def f(x):\n  return x\n\ndef g():\n  return 2\n", "add mod")
+    (repo / "mod.py").write_text("def f(x):\n    return x\n\ndef g():\n    return 3\n")
+    text = gitio.structural_diff(str(repo), "HEAD", WORKTREE)
+    hunk = text.split("@@", 2)[2]
+    assert "-  return 2" in hunk and "+    return 3" in hunk
+    # The reindented return line is context, in its after spelling.
+    assert "     return x" in hunk and "-  return x" not in hunk
+
+
+# --- structural: pure adapter tests, no difft needed ----------------------
+
+from diffweb import structural  # noqa: E402
+
+GIT_PATCH = (
+    "diff --git a/a.py b/a.py\nindex 1..2 100644\n--- a/a.py\n+++ b/a.py\n"
+    "@@ -1,2 +1,2 @@\n a\n-b\n+c\n"
+    "diff --git a/old.txt b/new.txt\nsimilarity index 100%\nrename from old.txt\nrename to new.txt\n"
+    "diff --git a/i.png b/i.png\nindex 3..4 100644\nBinary files a/i.png and b/i.png differ\n"
+)
+
+
+def test_split_patches_keeps_headers_and_paths() -> None:
+    ps = structural.split_patches(GIT_PATCH)
+    assert [(p.old_path, p.new_path) for p in ps] == [("a.py", "a.py"), ("old.txt", "new.txt"), ("i.png", "i.png")]
+    assert ps[0].hunks == ["@@ -1,2 +1,2 @@", " a", "-b", "+c"]
+    assert ps[1].hunks == [] and ps[2].hunks == []
+    assert "".join(p.text() for p in ps) == GIT_PATCH
+
+
+def test_rows_from_alignment_uses_after_text_for_unchanged_lines() -> None:
+    lhs = ["def f():", "  return 1", "", "x = 2"]
+    rhs = ["def f():", "    return 1", "", "x = 3"]
+    aligned = [[0, 0], [1, 1], [2, 2], [3, 3], [4, 4]]  # difft counts the phantom line after the final newline
+    rows = structural.rows_from_alignment(lhs, rhs, aligned, {3}, {3})
+    assert rows == [(" ", "def f():"), (" ", "    return 1"), (" ", ""), ("-", "x = 2"), ("+", "x = 3")]
+
+
+def test_rows_from_alignment_batches_removals_before_additions() -> None:
+    lhs = ["a", "b", "c", "z"]
+    rhs = ["a", "B", "C", "z"]
+    rows = structural.rows_from_alignment(lhs, rhs, [[0, 0], [1, 1], [2, 2], [3, 3]], {1, 2}, {1, 2})
+    assert [k for k, _ in rows] == [" ", "-", "-", "+", "+", " "]
+
+
+def test_hunks_have_exact_line_counts_and_context() -> None:
+    rows = [(" ", str(i)) for i in range(10)]
+    rows[5] = ("-", "five")
+    rows.insert(6, ("+", "FIVE"))
+    hunks = structural.hunks_from_rows(rows, context=2)
+    assert hunks[0] == "@@ -4,5 +4,5 @@"
+    assert hunks[1:] == [" 3", " 4", "-five", "+FIVE", " 6", " 7"]
+
+
+def test_hunks_split_when_changes_are_far_apart() -> None:
+    rows = [(" ", str(i)) for i in range(30)]
+    rows[2] = ("+", "two")
+    rows[25] = ("-", "twenty-five")
+    hunks = structural.hunks_from_rows(rows)
+    heads = [h for h in hunks if h.startswith("@@")]
+    assert heads == ["@@ -1,5 +1,6 @@", "@@ -22,7 +23,6 @@"]
+
+
+def test_merge_replaces_hunks_only_where_difft_had_a_view() -> None:
+    blobs = {("S", "a.py"): b"a\nb\n", ("E", "a.py"): b"a\nc\n"}
+    entries = [
+        {"path": "a.py", "language": "Python", "status": "changed",
+         "aligned_lines": [[0, 0], [1, 1], [2, 2]],
+         "chunks": [[{"lhs": {"line_number": 1, "changes": []}, "rhs": {"line_number": 1, "changes": []}}]]},
+        {"path": "new.txt", "language": "Text", "status": "unchanged"},
+        {"path": "i.png", "language": "Binary", "status": "changed"},
+    ]
+    difft_out = "\n".join(json.dumps(e) for e in entries) + "\ndifft warning: something\n"
+    out = structural.merge(GIT_PATCH, difft_out, lambda rev, f: blobs.get((rev, f)), "S", "E")
+    assert out == GIT_PATCH  # same verdict as git here, so byte-identical
+
+
+def test_merge_drops_hunks_of_a_file_difft_calls_unchanged() -> None:
+    entries = [{"path": "a.py", "language": "Python", "status": "unchanged"}]
+    out = structural.merge(GIT_PATCH, json.dumps(entries[0]), lambda rev, f: None, "S", "E")
+    assert out.startswith("diff --git a/a.py b/a.py\nindex 1..2 100644\n--- a/a.py\n+++ b/a.py\ndiff --git a/old.txt")
+
+
+def test_merge_keeps_git_patch_when_a_blob_is_missing() -> None:
+    entry = {"path": "a.py", "language": "Python", "status": "changed",
+             "aligned_lines": [[0, 0]], "chunks": []}
+    out = structural.merge(GIT_PATCH, json.dumps(entry), lambda rev, f: None, "S", "E")
+    assert out == GIT_PATCH
 
 
 # --- branch context (PR links, ahead/behind, dirty) -----------------------

@@ -17,7 +17,7 @@ See `diffweb/README.md` for how to run it and `diffweb/ROADMAP.md` for ideas.
 - [x] Catalog table at `/` — sortable, one row per worktree, 40ms warm
 - [x] Diff page: diff2html render, start/end commit picker, range in the URL — file counts match `git diff --stat` by hand
 - [x] Lazy per-file loading over the size limits (`diffweb/app.py:168`) — `test_diff_endpoint_lazy_when_over_limit`
-- [x] Structural diff toggle behind `features.structural` (`diffweb/gitio.py:225`) — renders difftastic output; returns install guidance, not an error, when `difft` is absent
+- [x] Structural diff toggle behind `features.structural` (`diffweb/gitio.py:225`) — difftastic's verdict spliced into git's patch, drawn by diff2html; returns install guidance, not an error, when `difft` is absent
 - [x] Images in diffs: before/after panes fed by `/api/w/<id>/blob`, lazy-loaded (`diffweb/app.py` `api_blob`, `worktree.js` `addImagePane`) — `test_blob_serves_each_end_of_a_range`, `test_blob_refuses_what_it_should`; screenshots of changed, added, deleted, renamed and SVG files in both themes and side-by-side
 - [x] Reviewed state in SQLite, keyed on blob sha — tick survives reload, file rebadges "changed" when the blob moves
 - [x] Live reload over SSE (`diffweb/app.py:209`) — editing a tracked file updates the open page within ~2s, scroll position kept
@@ -103,8 +103,13 @@ See `diffweb/README.md` for how to run it and `diffweb/ROADMAP.md` for ideas.
   mode until a screenshot caught it.
 - **diff2html's built-in `fileContentToggle` was dropped** (`diffweb/static/worktree.js:145`)
   — its "Viewed" checkbox sat next to ours and forgot itself on every re-render.
-- **difftastic's palette assumes a dark terminal** and ansi2html bakes colours in as
-  inline styles, so the structural pane stays dark in both themes.
+- **The structural view is a unified diff, not difftastic's own rendering.**
+  ansi2html of difft's terminal output gave a dark, uncollapsible `<pre>` with no
+  review ticks; `difft --display json` (behind `DFT_UNSTABLE=yes`) plus the two
+  blobs is enough to synthesise hunks that diff2html draws like any other diff
+  (`diffweb/structural.py`). Unchanged-but-reformatted lines are context in
+  their *after* spelling; a reformat-only file keeps its header and loses its
+  hunks, which diff2html renders as "File without changes".
 - **A configured-but-missing `difft` path surfaced as a git failure**, not as "not
   installed", until an explicit `os.access` check was added.
 - **Bad refs are user input, not server faults** — one exception handler maps

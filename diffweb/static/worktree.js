@@ -214,12 +214,10 @@ async function renderDiff() {
     `${files.length} files · <span class="add">+${added}</span> <span class="del">−${removed}</span>` +
     ` · ${reviewed}/${files.length} reviewed` +
     (changed ? ` · <span class="warn">${changed} changed since you reviewed</span>` : "") +
-    mergeNote(data);
+    mergeNote(data) + structuralNote(data);
 
   const renderStart = performance.now();
-  if (data.renderer === "structural") {
-    $diff.innerHTML = `<pre class="difft">${data.html}</pre>`;
-  } else if (data.lazy) {
+  if (data.lazy) {
     $diff.innerHTML = "";
     $summary.innerHTML += ` · <span class="warn">diff is large — loading per file</span>`;
     await renderLazy(files, q);
@@ -238,6 +236,14 @@ function mergeNote(data) {
     ? ` · <span class="merge-note">merge commit: showing only the conflict resolution` +
       ` (<code>--remerge-diff</code>); tick <i>true diff</i> for everything it brought in</span>`
     : ` · <span class="merge-note">merge commit: showing the full diff against its first parent</span>`;
+}
+
+// The structural diff is drawn by the same renderer, so say what is different
+// about what it shows: lines difftastic considers unchanged are context.
+function structuralNote(data) {
+  if (data.renderer !== "structural") return "";
+  return ` · <span class="merge-note">structural: only syntactic changes are marked;` +
+    ` reformatting shows as context (difftastic)</span>`;
 }
 
 // The server can time its own work but not the two stages the user waits

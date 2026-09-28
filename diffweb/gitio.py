@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import fnmatch
+import functools
 import glob
 import hashlib
 import mimetypes
@@ -14,6 +15,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import structural
 from .config import DiffwebConfig
 
 # The sentinel end-of-range meaning "whatever is on disk right now".
@@ -356,19 +358,35 @@ def remerge_blob_shas(path: str, sha: str) -> dict[str, str]:
     return {name: c["sha"] for name, c in remerge_raw_changes(path, sha).items()}
 
 
-def structural_diff(path: str, start: str, end: str, difft: str | None = None) -> str:
-    """difftastic's side-by-side output, still ANSI-coloured."""
+def structural_diff(
+    path: str, start: str, end: str, difft: str | None = None, files: list[str] | None = None
+) -> str:
+    """The range as a unified diff whose hunks are difftastic's verdict.
+
+    Runs git's own diff and difftastic (as `git diff --ext-diff`, in its JSON
+    mode) over the same range, then splices the two: see `structural.merge`.
+    The result is ordinary unified diff text, so the page draws it with the
+    same renderer as a line diff.
+    """
     binary = difft or shutil.which("difft")
     # A configured-but-missing path must read as "not installed", not as a git failure.
     if not binary or not os.access(binary, os.X_OK):
         raise FileNotFoundError(f"difft not usable: {binary or 'not on PATH'}")
     env = {
         "GIT_EXTERNAL_DIFF": binary,
-        "DFT_COLOR": "always",
-        "DFT_DISPLAY": "side-by-side",
-        "DFT_WIDTH": "180",
+        "DFT_UNSTABLE": "yes",  # --display json is behind this flag
+        "DFT_DISPLAY": "json",
+        "DFT_COLOR": "never",
     }
-    return run_git(path, "diff", "--ext-diff", *_diff_args(start, end), env=env)
+    # Same -M/-C as the line diff so both see the same set of files.
+    args = ["diff", "--ext-diff", "-M", "-C", *_diff_args(start, end)]
+    if files:
+        args += ["--", *files]
+    difft_out = run_git(path, *args, env=env)
+    git_diff = diff_text(path, start, end, files)
+    return structural.merge(
+        git_diff, difft_out, lambda rev, file: blob_bytes(path, rev, file), start, end
+    )
 
 
 def ahead_behind(path: str, base: str, head: str = "HEAD") -> tuple[int, int]:

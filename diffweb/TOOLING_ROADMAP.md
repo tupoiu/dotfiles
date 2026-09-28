@@ -145,3 +145,25 @@ Format - one entry per session, newest first:
   exactly that. The fixture could instead force every path-shaped setting under
   `tmp_path`, and a session-scoped check could fail the run if anything appeared
   in the real state dir.
+
+## Structural view through diff2html (2026-09-22)
+
+- `difft --display json` - the enabler. Its `aligned_lines` is exactly the
+  side-by-side layout, so synthesising a unified diff was a hundred lines, not
+  a parser. Probe it with two scratch files before designing around it: the
+  JSON carries no line text, and created/deleted/binary files carry nothing at
+  all, which is what pushed the design to "splice into git's patch".
+- `poe diffweb-test` - helped; the pure `structural.py` tests needed no difft
+  and ran in a second. Five `remerge` tests fail on a pristine checkout of
+  this branch too, so they are environment, not regression - but a failing
+  baseline costs a detour every time. **Improve:** skip them when the local
+  git lacks `--remerge-diff`, or mark them as such.
+- Playwright - `libnspr4.so` missing again after a reprovision, and no sudo.
+  Workaround that took three tries: run the script inside the local
+  `mcr.microsoft.com/playwright:v1.60.0-noble` image with `--network host`,
+  mounting `~/.cache/ms-playwright` at `PLAYWRIGHT_BROWSERS_PATH` (the image's
+  own browser is a different revision from the installed npm package) and
+  `diffweb/node_modules` for the import. **Improve:** `shot.mjs` should fall
+  back to exactly that when the launch fails for a missing library; it also
+  still cannot tick a checkbox before shooting, so a `--check <css>` flag would
+  have replaced the hand-written script.

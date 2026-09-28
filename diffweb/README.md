@@ -107,17 +107,26 @@ all. On a merge commit's remerge view only the *after* side is shown, because th
 file's current blob sha, so when the file changes afterwards it reopens badged
 "changed since you reviewed". State lives in SQLite, keyed by worktree.
 
-**Structural diff** (`features.structural: true`). Renders the range with
-[difftastic] instead of a line diff - far better for reorderings and refactors.
-`difft` is a Rust binary, so `uv sync` cannot provide it:
+**Structural diff** (`features.structural: true`). Renders the range from
+[difftastic]'s verdict instead of git's - far better for reorderings and
+refactors, and a pure reformat becomes *File without changes*. It is drawn by
+the same diff2html renderer as the line view, so collapsing, review ticks,
+side-by-side, both themes and the keyboard all work: the server runs `git diff
+--ext-diff` with `difft --display json`, and `structural.py` splices that into
+git's own patch as ordinary unified diff text. A line difftastic calls unchanged
+(reindented, rewrapped) is context, shown in its *after* spelling; a line it
+calls changed is a `-`/`+` pair with diff2html's word highlighting. Files it has
+no view on - new, deleted, binary - keep git's hunks, so renames, mode changes
+and image panes are untouched. The `+`/`−` counts in headers and the summary
+are still git's numstat, so a reformat-only file reads `+5 −4` over an empty
+body. `difft` is a Rust binary, so `uv sync` cannot provide it:
 
 ```console
 $ cargo binstall difftastic
 ```
 
 Without it the toggle stays disabled and the endpoint returns that instruction
-rather than an error. The structural pane is dark in both colour schemes because
-difftastic's palette is tuned for a dark terminal.
+rather than an error.
 
 **Branch context.** Each row shows how far ahead of its base the branch is, a red
 `↓1` if it has fallen *behind* the base (your diff is against an old merge base),
@@ -191,6 +200,7 @@ capped at `profile_keep`.
 | --- | --- |
 | `config.py` | pydantic models + YAML loading; every path the app touches comes from here |
 | `gitio.py` | argv-only git wrappers, worktree discovery, ref validation |
+| `structural.py` | difftastic JSON + the two blobs -> unified diff hunks, spliced into git's patch |
 | `state.py` | SQLite reviewed-state and per-worktree base-ref overrides |
 | `app.py` | FastAPI routes |
 | `static/favicon.svg` | the diff mark: a rounded square, red half and green half; also the browser icon |
@@ -334,6 +344,11 @@ The established shape, worth following:
   stats, review state and blob shas are keyed on the first two, so the page
   normalises the header text to the numstat spelling and `rename_target()`
   turns that into the plain new path.
+- **difftastic's JSON is behind `DFT_UNSTABLE=yes`** and carries no line text,
+  only 0-based line numbers, an `aligned_lines` layout of the whole file and
+  the changed lines. Line text comes from `blob_bytes` for each side; a file
+  with a trailing newline gets a phantom empty last line in difft's numbering,
+  which `structural._lines` drops so it never becomes a `+`/`-` row.
 - **Don't rely on an emoji for a functional control**; a box with no glyph is a
   real outcome on a bare Linux box. Use an inline SVG.
 
