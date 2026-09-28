@@ -756,6 +756,79 @@ def test_merge_keeps_git_patch_when_a_blob_is_missing() -> None:
     assert out == GIT_PATCH
 
 
+# --- untracked files ------------------------------------------------------
+
+
+def test_untracked_file_is_a_new_file_when_the_range_ends_at_the_worktree(world: dict[str, Path]) -> None:
+    repo = world["repo"]
+    (repo / "fresh.py").write_text("print(1)\nprint(2)\n")
+    (repo / "pic.png").write_bytes(b"\x89PNG\x00\x01")
+    path = str(repo)
+    rows = {r["path"]: r for r in gitio.numstat(path, "HEAD", WORKTREE)}
+    assert rows["fresh.py"] == {"path": "fresh.py", "added": 2, "removed": 0, "binary": False,
+                                "image": False, "untracked": True}
+    assert rows["pic.png"]["binary"] and rows["pic.png"]["image"] and rows["pic.png"]["untracked"]
+    changes = gitio.raw_changes(path, "HEAD", WORKTREE)
+    assert changes["fresh.py"]["status"] == "A"
+    assert changes["fresh.py"]["sha"] == git(repo, "hash-object", "fresh.py").strip()
+    text = gitio.diff_text(path, "HEAD", WORKTREE)
+    assert "diff --git a/fresh.py b/fresh.py\nnew file mode" in text
+    assert "+++ b/fresh.py" in text and "+print(2)" in text
+    assert "Binary files /dev/null and b/pic.png differ" in text
+    # The tracked changes are still there, ahead of the untracked ones.
+    assert text.index("@@") < text.index("+++ b/fresh.py")
+
+
+def test_untracked_files_do_not_leak_into_other_ranges(world: dict[str, Path]) -> None:
+    repo = world["repo"]
+    (repo / "fresh.py").write_text("print(1)\n")
+    path = str(repo)
+    assert "fresh.py" not in [r["path"] for r in gitio.numstat(path, "HEAD", INDEX)]
+    assert "fresh.py" not in gitio.diff_text(path, "HEAD", INDEX)
+    assert "fresh.py" not in gitio.diff_text(path, "HEAD~1", "HEAD")
+    # The per-file limiter applies to untracked files too.
+    assert "fresh.py" not in gitio.diff_text(path, "HEAD", WORKTREE, files=["c.txt"])
+    assert "c.txt" not in gitio.diff_text(path, "HEAD", WORKTREE, files=["fresh.py"])
+
+
+def test_ignored_and_nested_repo_paths_are_not_untracked(world: dict[str, Path]) -> None:
+    repo = world["repo"]
+    (repo / ".git" / "info" / "exclude").write_text("*.log\n")
+    (repo / "noise.log").write_text("x\n")
+    nested = repo / "vendored"
+    git(world["root"], "init", "-q", str(nested))
+    (nested / "f.txt").write_text("inside\n")
+    assert gitio.untracked_files(str(repo)) == []
+
+
+def test_untracked_edit_is_a_cache_miss(world: dict[str, Path]) -> None:
+    repo = world["repo"]
+    (repo / "fresh.py").write_text("v1\n")
+    assert "+v1" in gitio.diff_text(str(repo), "HEAD", WORKTREE)
+    time.sleep(0.01)
+    (repo / "fresh.py").write_text("v2!\n")  # a different size, so the stat key changes even on a coarse clock
+    assert "+v2!" in gitio.diff_text(str(repo), "HEAD", WORKTREE)
+
+
+def test_api_diff_and_catalog_include_untracked_files(client: TestClient, config: DiffwebConfig) -> None:
+    wid = wt_id(config, "proj")
+    repo = next(w.path for w in gitio.discover(config) if w.name == "proj")
+    (Path(repo) / "fresh.py").write_text("print(1)\n")
+    data = client.get(f"/api/w/{wid}/diff").json()
+    row = next(f for f in data["files"] if f["path"] == "fresh.py")
+    assert row["untracked"] is True and row["status"] == "A"
+    assert data["review"]["fresh.py"] == "new"
+    assert "+++ b/fresh.py" in data["diff"]
+    # Tick it reviewed; the sha is the on-disk blob, so the tick sticks until the file changes.
+    client.post(f"/api/w/{wid}/reviewed", params={"path": "fresh.py", "blob_sha": data["shas"]["fresh.py"], "reviewed": "true"})
+    assert client.get(f"/api/w/{wid}/diff").json()["review"]["fresh.py"] == "reviewed"
+    (Path(repo) / "fresh.py").write_text("print(2)\n")
+    assert client.get(f"/api/w/{wid}/diff").json()["review"]["fresh.py"] == "changed"
+    # The catalog's file count agrees with the diff page.
+    wt = next(w for w in gitio.discover(config) if w.name == "proj")
+    assert gitio.summarise(wt, "origin/master").files == len(data["files"])
+
+
 # --- branch context (PR links, ahead/behind, dirty) -----------------------
 
 

@@ -103,6 +103,11 @@ nothing until you scroll to one; a collapsed file's pictures never load at
 all. On a merge commit's remerge view only the *after* side is shown, because the
 *before* is the mechanical merge, which exists nowhere we can fetch it from.
 
+**Untracked files.** A file git has not been told about is still part of your
+work, so when the range ends at the working tree it is shown as an added file
+with an `untracked` tag, counted in the summary and the catalog, and can be
+ticked reviewed like any other. Ignored files and nested repos are left out.
+
 **Reviewed state.** Tick a file to collapse it. The tick is stored against that
 file's current blob sha, so when the file changes afterwards it reopens badged
 "changed since you reviewed". State lives in SQLite, keyed by worktree.
@@ -316,8 +321,14 @@ The established shape, worth following:
   when bumping it. Its selectors often carry two classes, so a one-class
   override of yours will silently lose.
 - **`git diff` never reports untracked files**, and `git add -N` is not
-  available to us: the app promises it never writes to your repos. Untracked
-  files are rendered via `git diff --no-index` instead.
+  available to us: the app promises it never writes to your repos. When the
+  range ends at the working tree, `gitio.untracked_changes` lists them with
+  `ls-files --others --exclude-standard` and diffs each against `/dev/null`
+  with `git diff --no-index`, which exits 1 on a difference, so it cannot go
+  through `run_git`. They are folded into numstat, raw changes and the patch
+  text as additions with an `untracked` flag; the review sha is the blob hash
+  computed in Python. For a long time the README claimed this and the code did
+  not do it - a branch whose work was an entire new role showed as one file.
 - **Don't shell out twice for the same thing.** Sizing the diff with a second,
   discarded `git diff` was half the cost of the most expensive request stage.
 - **Claude transcript directory names cannot be reversed** - the slug maps both

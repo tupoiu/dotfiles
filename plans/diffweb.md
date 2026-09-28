@@ -80,6 +80,14 @@ See `diffweb/README.md` for how to run it and `diffweb/ROADMAP.md` for ideas.
   the mode is part of the key - a bare `(path, start, end)` key would serve the
   wrong reading. The structural renderer runs `git diff` under difftastic, so
   remerge is forced off there.
+- **Untracked files were documented as handled but were not.** The `--no-index`
+  trap in the README described a fix that existed nowhere in the code; the
+  catalog's amber "3 uncommitted files" dot came from `git status` while the
+  diff and stats came from `git diff`, so the two disagreed. Now
+  `gitio.untracked_changes` diffs each untracked file against `/dev/null` and
+  the three outputs (numstat, raw, patch) all include them when the range ends
+  at the working tree. One git subprocess per untracked file, memoised on the
+  file's stat.
 - **The staged shortcut starts at the merge base, not at `origin/master`.**
   Starting at the base ref itself would render other people's commits as
   reverse-changes, which no other range on the page does.

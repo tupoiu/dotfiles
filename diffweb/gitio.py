@@ -206,7 +206,84 @@ def diff_text(path: str, start: str, end: str, files: list[str] | None = None) -
     args = ["diff", "--no-color", "-M", "-C", *_diff_args(start, end)]
     if files:
         args += ["--", *files]
-    return _try_git(path, *args) or ""
+    text = _try_git(path, *args) or ""
+    if end == WORKTREE:
+        text += "".join(u.patch for u in untracked_changes(path, files))
+    return text
+
+
+# --- untracked files ---------------------------------------------------------
+#
+# `git diff` never reports a file git has not been told about, and the app
+# promises never to write to a repo, so `git add -N` is out. When the range ends
+# at the working tree, untracked files are diffed one by one against /dev/null
+# with `--no-index` and folded into the numstat, raw-change and patch outputs as
+# plain additions, so the rest of the app never knows the difference.
+
+
+@dataclass
+class Untracked:
+    path: str
+    added: int | None
+    removed: int | None
+    binary: bool
+    sha: str
+    patch: str
+
+
+def untracked_files(path: str) -> list[str]:
+    """Untracked, non-ignored files. A nested repo shows up as `dir/` and is skipped."""
+    out = _try_git(path, "ls-files", "--others", "--exclude-standard") or ""
+    return [f for f in out.splitlines() if f and not f.endswith("/")]
+
+
+@functools.lru_cache(maxsize=512)
+def _untracked_entry(path: str, file: str, mtime_ns: int, size: int) -> Untracked | None:
+    """One `git diff --no-index` per file, memoised on the file's stat so a live
+    reload that touched nothing re-reads nothing. Exit 1 means "differs", which
+    is the normal outcome here."""
+    proc = subprocess.run(
+        ["git", "diff", "--no-index", "--numstat", "-p", "--", "/dev/null", file],
+        cwd=path,
+        capture_output=True,
+    )
+    if proc.returncode not in (0, 1):
+        return None
+    out = proc.stdout.decode("utf-8", errors="replace")
+    numstat, _, patch = out.partition("\n\n")
+    try:
+        added, removed, _name = numstat.split("\t", 2)
+    except ValueError:
+        return None
+    try:
+        data = (Path(path) / file).read_bytes()
+    except OSError:
+        return None
+    sha = hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()  # what git hash-object would say
+    return Untracked(
+        path=file,
+        added=None if added == "-" else int(added),
+        removed=None if removed == "-" else int(removed),
+        binary=added == "-",
+        sha=sha,
+        patch=patch,
+    )
+
+
+def untracked_changes(path: str, files: list[str] | None = None) -> list[Untracked]:
+    wanted = set(files) if files else None
+    out: list[Untracked] = []
+    for f in untracked_files(path):
+        if wanted is not None and f not in wanted:
+            continue
+        try:
+            st = os.lstat(os.path.join(path, f))
+        except OSError:
+            continue
+        entry = _untracked_entry(path, f, st.st_mtime_ns, st.st_size)
+        if entry is not None:
+            out.append(entry)
+    return out
 
 
 def is_noisy(path: str, patterns: list[str]) -> bool:
@@ -264,7 +341,20 @@ def is_image(path: str) -> bool:
 
 
 def numstat(path: str, start: str, end: str) -> list[dict[str, object]]:
-    return _parse_numstat(_try_git(path, "diff", "--numstat", "-M", "-C", *_diff_args(start, end)) or "")
+    rows = _parse_numstat(_try_git(path, "diff", "--numstat", "-M", "-C", *_diff_args(start, end)) or "")
+    if end == WORKTREE:
+        rows += [
+            {
+                "path": u.path,
+                "added": u.added,
+                "removed": u.removed,
+                "binary": u.binary,
+                "image": is_image(u.path),
+                "untracked": True,
+            }
+            for u in untracked_changes(path)
+        ]
+    return rows
 
 
 def _parse_raw(path: str, out: str) -> dict[str, dict[str, str]]:
@@ -287,7 +377,11 @@ def _parse_raw(path: str, out: str) -> dict[str, dict[str, str]]:
 
 
 def raw_changes(path: str, start: str, end: str) -> dict[str, dict[str, str]]:
-    return _parse_raw(path, _try_git(path, "diff", "--raw", "-M", "-C", *_diff_args(start, end)) or "")
+    changes = _parse_raw(path, _try_git(path, "diff", "--raw", "-M", "-C", *_diff_args(start, end)) or "")
+    if end == WORKTREE:
+        for u in untracked_changes(path):
+            changes[u.path] = {"status": "A", "old_path": "", "sha": u.sha}
+    return changes
 
 
 def blob_shas(path: str, start: str, end: str) -> dict[str, str]:

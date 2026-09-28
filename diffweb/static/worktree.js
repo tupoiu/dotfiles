@@ -312,6 +312,13 @@ function decorateFiles(root) {
         : `<span class="add">+${info.added}</span> <span class="del">−${info.removed}</span>`;
       header.appendChild(stats);
       if (info.image) queueImagePane(wrapper, info);
+      if (info.untracked) {
+        const tag = document.createElement("span");
+        tag.className = "untracked-tag";
+        tag.title = "not yet added to git; shown as a new file";
+        tag.textContent = "untracked";
+        header.appendChild(tag);
+      }
       if (info.noisy) {
         const tag = document.createElement("span");
         tag.className = "noise-tag";

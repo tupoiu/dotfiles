@@ -167,3 +167,10 @@ Format - one entry per session, newest first:
   back to exactly that when the launch fails for a missing library; it also
   still cannot tick a checkbox before shooting, so a `--check <css>` flag would
   have replaced the hand-written script.
+- The hosted `poe diffweb-dev` instance - helped as the place to see the real
+  bug (a worktree whose new role was invisible), but `--reload` restarts on
+  every edit to a `.py` file, and mid-restart the reloader holds the port while
+  no worker answers, so a request hangs rather than failing. Two requests hung
+  that way during this session and looked like a bug in the new code.
+  **Improve:** `poe diffweb-dev` could print a line when it restarts, or the
+  screenshot script could fail fast on a connect timeout instead of waiting.
