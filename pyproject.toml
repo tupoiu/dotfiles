@@ -24,3 +24,5 @@ build-claude = "podman build --cgroup-manager=cgroupfs -t claude-default claude-
 build-nix = "python3 nix/oci_cached.py"
 build-playwright = "podman build --cgroup-manager=cgroupfs -t playwright-default --build-arg BASE_IMAGE=localhost/claude-default:latest playwright-docker"
 test-claude = {cmd = "pytest tests/", executor = "uv" }
+# Pointer only. Poe runs tasks without a terminal, which breaks the test subshell.
+fish-alias = { cmd = "echo 'fish-alias is a fish function: run fish-alias from fish.'", help = "Add/list/show/rm fish aliases: run the fish-alias function from fish, not poe" }
