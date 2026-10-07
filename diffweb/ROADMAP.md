@@ -77,6 +77,8 @@ Scratchpad. Add anything, however half-formed - nothing here is committed to.
   - All PRs I'm tagged for review on (with age since they became "ready")
   The extra less important details should be lazy loaded. The code for this part of the app should be quite separated from the worktree diff viewer part (separate subfolder).
 
+- Test view expansion: Turn the "hide tests" checkbox into a segmented button with: All | Non-tests | Tests | Test summary . The Test summary should just have the function names, and docstrings (written smaller, so they stand out less) of every test in the diff. Add a profile to time this for some diffs in ionics.
+
 #### Claude
 
 - Low prio: Merge commits: the remerge/true-diff split only applies to a single merge
