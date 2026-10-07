@@ -4,7 +4,7 @@
   "description": "diffweb's browser code (web/*.ts), bundled by bun into static/dist/. Dev tooling: type checking and playwright for shot.ts.",
   "type": "module",
   "scripts": {
-    "build": "bun build web/catalog.ts web/profiles.ts web/worktree.ts --outdir static/dist --target browser --format=iife --sourcemap=linked",
+    "build": "bun build web/catalog.ts web/profiles.ts web/worktree.ts web/hud/hud.ts --outdir static/dist --target browser --format=iife --sourcemap=linked",
     "watch": "bun run build --watch",
     "typecheck": "tsc --noEmit"
   },

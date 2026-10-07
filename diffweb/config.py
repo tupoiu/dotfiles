@@ -7,10 +7,11 @@ so tests can point the whole app at a temp directory.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 ENV_VAR = "DIFFWEB_CONFIG"
 DEFAULT_CONFIG_PATH = "~/.config/diffweb.yaml"
@@ -30,6 +31,8 @@ class Features(BaseModel):
     pr_links: bool = True
     # Records stage timings for the diff path; off means no timing work at all.
     profiling: bool = True
+    # The PR dashboard at /hud. None means "on when hud.repos is set".
+    hud: bool | None = None
 
 
 class Limits(BaseModel):
@@ -75,6 +78,30 @@ class Tests(BaseModel):
     )
 
 
+_REPO = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
+
+
+class Hud(BaseModel):
+    """The PR dashboard: which repos it looks at, and how far back."""
+
+    # owner/name. They go into a GitHub search string, so the format is strict.
+    repos: list[str] = Field(default_factory=list)
+    # "Closed or merged recently" means within this many workdays (Mon-Fri).
+    closed_workdays: int = 3
+    # Most PRs shown per section; GitHub search pages are at most 100.
+    limit: int = Field(default=50, ge=1, le=100)
+    # A search over several repos is slower than one `gh pr list`.
+    timeout_seconds: float = 20.0
+
+    @field_validator("repos")
+    @classmethod
+    def _check_repos(cls, repos: list[str]) -> list[str]:
+        for repo in repos:
+            if not _REPO.fullmatch(repo):
+                raise ValueError(f"hud.repos: {repo!r} is not owner/name")
+        return repos
+
+
 class Tools(BaseModel):
     difft_path: str | None = None
     gh_path: str | None = None
@@ -91,10 +118,16 @@ class DiffwebConfig(BaseModel):
     noise: Noise = Field(default_factory=Noise)
     tests: Tests = Field(default_factory=Tests)
     tools: Tools = Field(default_factory=Tools)
+    hud: Hud = Field(default_factory=Hud)
     state_db: str = "~/.local/state/diffweb/state.db"
     profile_log: str = "~/.local/state/diffweb/profiles.jsonl"
     # Older profiles are dropped so the log cannot grow without bound.
     profile_keep: int = 500
+
+    def hud_enabled(self) -> bool:
+        if self.features.hud is None:
+            return bool(self.hud.repos)
+        return self.features.hud
 
     def expanded_roots(self) -> list[str]:
         return [os.path.expanduser(r) for r in self.roots]

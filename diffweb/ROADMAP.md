@@ -69,18 +69,23 @@ Scratchpad. Add anything, however half-formed - nothing here is committed to.
   in place; this is client-side work on top of them.
 
 - AI-generated change summary per worktree, shown on the catalog row.
-- HUD (design settled - see [INTENT-hud.md](INTENT-hud.md)): A new page off the homepage which shows:
+- ~~HUD (design settled - see [INTENT-hud.md](INTENT-hud.md)): A new page off the homepage which shows:
   - all of my open PRs (whether they're draft/non-draft) by repo which should be declared in the diffweb config file. Next to the name of the PR there should be a chip like we have in diffweb that is a like to the github page for the PR.
   - all of my PRs closed/merged within the last 3 workdays
   - their last activity (e.g. commit/comment)
   - if they're missing review from any specific people or teams
   - All PRs I'm tagged for review on (with age since they became "ready")
-  The extra less important details should be lazy loaded. The code for this part of the app should be quite separated from the worktree diff viewer part (separate subfolder).
+  The extra less important details should be lazy loaded. The code for this part of the app should be quite separated from the worktree diff viewer part (separate subfolder).~~
+  Done - see `diffweb/hud/` and `/hud`.
 
 - Test view expansion: Turn the "hide tests" checkbox into a segmented button/tab-bar type of thing with: All | Non-tests | Tests | Test summary . The Test summary should just have the function names, and docstrings (written smaller, so they stand out less) of every test in the diff. Add a profile to time this for some diffs in ionics.
 
 #### Claude
 
+- HUD: a per-repo or global toggle to include team review requests
+  (`review-requested:@me`), for people on small teams where those are personal.
+- HUD: CI status per PR (`statusCheckRollup.state`) next to the chip. It is one
+  more field on the details query.
 - Low prio: Merge commits: the remerge/true-diff split only applies to a single merge
   commit. A range containing several merges could offer "hide clean merges" or
   a per-commit remerge view once the stacked view exists. `--remerge-diff`

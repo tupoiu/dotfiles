@@ -22,6 +22,25 @@ Format - one entry per session, newest first:
 
 ---
 
+## 2026-10-07 - the HUD (`/hud`)
+
+- `gh api graphql` by hand, before writing any code - helped most. Probing
+  the two queries against live data settled the design: three aliased searches
+  in one request (~1.3s), details by node id (~2.5s for 20 PRs, so they are
+  worth lazy loading), and the fact that re-requested reviewers already sit in
+  `reviewRequests`. Pass the body with `--input`; zsh globs `-f ids[]=...`.
+- `poe diffweb-test` - helped; a fake `gh` written as a Python script that
+  routes on the query text made the GraphQL layer as testable as `gh pr list`.
+- `poe diffweb-typecheck` - caught a clash that the bundle never shows: page
+  scripts without an import/export share one global scope under `tsc`.
+- `poe diffweb-shot` - helped; read the PNGs and the columns of each per-repo
+  table did not line up, which no test would catch. But a catalog over ~30 real
+  worktrees takes longer than its page timeout, so a run of `/hud /` dies
+  half-way. **Improve:** a `--timeout` flag, or shoot only the paths given.
+- A second instance for real data - a `pkill -f "python -m diffweb"` to restart
+  it also matched the shell that ran it. **Improve:** keep the PID (`$!`) and
+  kill that; never kill by pattern while `poe diffweb-dev` may be running.
+
 ## 2026-10-07 - page scripts from JavaScript to TypeScript (bun)
 - `poe diffweb-shot` - helped, once it ran. Chromium would not start: two
   libraries (`libnss3`, `libnspr4`) were missing, and the script said only

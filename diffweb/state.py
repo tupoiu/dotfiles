@@ -26,6 +26,11 @@ CREATE TABLE IF NOT EXISTS pr_cache (
     payload    TEXT,          -- JSON for the PR, or NULL meaning "looked, found none"
     checked_at REAL NOT NULL  -- unix time, so the age survives a restart
 );
+CREATE TABLE IF NOT EXISTS cache (
+    key        TEXT PRIMARY KEY,
+    payload    TEXT NOT NULL, -- JSON
+    checked_at REAL NOT NULL  -- unix time
+);
 """
 
 
@@ -87,6 +92,26 @@ class State:
                 "ON CONFLICT(worktree) DO UPDATE SET branch = excluded.branch, "
                 "payload = excluded.payload, checked_at = excluded.checked_at",
                 (worktree, branch, json.dumps(payload) if payload is not None else None, checked_at),
+            )
+            self._conn.commit()
+
+    def cached(self, key: str) -> tuple[object, float] | None:
+        """A stored JSON payload and when it was fetched, or None."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT payload, checked_at FROM cache WHERE key = ?", (key,)
+            ).fetchone()
+        if row is None:
+            return None
+        return json.loads(row["payload"]), row["checked_at"]
+
+    def save_cached(self, key: str, payload: object, checked_at: float) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO cache (key, payload, checked_at) VALUES (?, ?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET payload = excluded.payload, "
+                "checked_at = excluded.checked_at",
+                (key, json.dumps(payload), checked_at),
             )
             self._conn.commit()
 

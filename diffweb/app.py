@@ -27,6 +27,7 @@ from fastapi.templating import Jinja2Templates
 from . import forge, gitio, profiling
 from .config import DiffwebConfig, load_config
 from .gitio import INDEX, UPSTREAM, WORKTREE, Worktree
+from .hud import routes as hud_routes
 from .state import State
 
 HERE = Path(__file__).parent
@@ -40,7 +41,7 @@ def _bad_ref_handler(request: Request, exc: Exception) -> JSONResponse:
     """A ref the user typed is bad input, not a server fault."""
     return JSONResponse({"error": str(exc)}, status_code=400)
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
-templates = Jinja2Templates(directory=str(HERE / "templates"))
+templates = Jinja2Templates(directory=[HERE / "templates", hud_routes.TEMPLATES])
 
 
 def asset(path: str) -> str:
@@ -58,6 +59,8 @@ def asset(path: str) -> str:
 
 
 templates.env.globals["asset"] = asset
+# The shared header links to the HUD on every page when it is on.
+templates.env.globals["hud_enabled"] = lambda: get_config().hud_enabled()
 
 _config: DiffwebConfig | None = None
 _state: State | None = None
@@ -84,6 +87,9 @@ def reset_for_tests() -> None:
     _config = _state = None
     _diff_cache.clear()
     _pending_profiles.clear()
+
+
+app.include_router(hud_routes.make_router(get_config, get_state, templates))
 
 
 def find_worktree(wt_id: str, config: DiffwebConfig) -> Worktree:

@@ -106,6 +106,12 @@ def _branch_of(path: str) -> str:
     return name
 
 
+def remote_url(path: str, remote: str = "origin") -> str | None:
+    """The fetch URL of a remote, or None when the repo has no such remote."""
+    url = (_try_git(path, "remote", "get-url", remote) or "").strip()
+    return url or None
+
+
 def _linked_worktrees(path: str) -> list[str]:
     out = _try_git(path, "worktree", "list", "--porcelain") or ""
     return [line[len("worktree ") :].strip() for line in out.splitlines() if line.startswith("worktree ")]

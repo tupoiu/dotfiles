@@ -42,6 +42,7 @@ features:
   reviewed_state: true     # per-file reviewed checkboxes
   live_reload: true        # SSE push when the worktree changes
   profiling: true          # stage timings for the diff path, shown at /profiles
+  hud: null                # the PR dashboard at /hud; null means "on when hud.repos is set"
 limits:
   max_inline_diff_bytes: 1500000   # above this the page loads file-by-file
   max_inline_files: 300
@@ -56,6 +57,11 @@ tools:
   difft_path: null         # defaults to whatever `difft` is on PATH
   gh_path: null            # defaults to whatever `gh` is on PATH
   gh_timeout_seconds: 5.0
+hud:
+  repos: []                # owner/name, e.g. [acme/widgets, acme/gears]
+  closed_workdays: 3       # "closed or merged recently" = within this many Mon-Fri days
+  limit: 50                # most PRs per section
+  timeout_seconds: 20.0
 state_db: "~/.local/state/diffweb/state.db"
 profile_log: "~/.local/state/diffweb/profiles.jsonl"
 profile_keep: 500          # older profiles are dropped
@@ -206,6 +212,36 @@ complains about is mostly not the server's - on a 9-file branch it is roughly
 120ms of git and 95ms of rendering. Profiles land in `profile_log` as JSONL,
 capped at `profile_keep`.
 
+**HUD** (`/hud`, on when `hud.repos` is set). One page with my pull requests
+across the configured repos, linked from the header of every page:
+
+- *My open PRs*, drafts included, grouped by repo and sorted by GitHub's
+  `updatedAt`, newest first.
+- *Closed or merged since* the date `closed_workdays` workdays back (Mon-Fri, no
+  holiday calendar), grouped by repo.
+- *Waiting for my review*: open PRs that request my review directly, oldest
+  ready-for-review first, with drafts in their own list below. Team requests
+  (often from CODEOWNERS) are left out on purpose, or this would list every PR
+  the team owns.
+
+Each PR has the catalog's chip, linking to GitHub. When a local worktree is
+checked out on the PR's branch (matched on the `origin` remote and the branch
+name), a second pill links to its diff page. Two columns load after the first
+paint, because they cost a second, slower query (~2.5s for 20 PRs): *last
+activity* (the latest commit, comment or review, by anyone) and *reviews* (the
+review decision, plus every person or team still requested). A re-request puts
+a reviewer back in GitHub's `reviewRequests`, so "requested and has not reviewed
+since" is that list as it is. On my own PRs, `↩ needs your reply` marks a PR
+where a person other than me spoke last and it was not an approval. Bots do not
+count either way.
+
+The data comes from `gh api graphql`: one request with three aliased searches,
+then `nodes(ids:)` for the details. Both are stored in the state DB. The page
+paints from what is stored, asks again at once if that is over two minutes old,
+then polls every two minutes while the tab is visible. The refresh glyph asks
+GitHub straight away. A failed refresh keeps the old rows and says how old they
+are. The code is in `hud/`, apart from the diff viewer.
+
 ## Alternatives that were tried first
 
 - **Forgejo** (`codeberg.org/forgejo/forgejo:9` under docker) - genuinely nice
@@ -229,6 +265,8 @@ capped at `profile_keep`.
 | `structural.py` | difftastic JSON + the two blobs -> unified diff hunks, spliced into git's patch |
 | `state.py` | SQLite reviewed-state and per-worktree base-ref overrides |
 | `app.py` | FastAPI routes |
+| `hud/` | the PR dashboard: `github.py` (GraphQL queries + parsing), `service.py` (state DB cache, worktree matching), `routes.py`, `templates/hud.html` |
+| `web/hud/hud.ts` | the HUD page script: draws every row from `/api/hud` and `/api/hud/details` |
 | `static/favicon.svg` | the diff mark: a rounded square, red half and green half; also the browser icon |
 | `web/*.ts` | the page scripts: one entry per page (`catalog`, `worktree`, `profiles`), bundled by bun into `static/dist/` |
 | `web/render-options.ts` | the diff2html options the page renders with, shared with the tests |
@@ -305,7 +343,8 @@ on save under `poe diffweb-dev`.
 
 ## Tests
 
-`tests/test_diffweb.py`. Two rules, both load-bearing:
+`tests/test_diffweb.py`, and `tests/test_diffweb_hud.py` for the HUD, whose
+fake `gh` answers both GraphQL queries from canned JSON. Two rules, both load-bearing:
 
 - **Nothing may touch the developer's real repos or home.** The `world` fixture
   builds a temp git repo, a linked worktree and a bare origin under `tmp_path`;

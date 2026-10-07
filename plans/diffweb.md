@@ -213,6 +213,25 @@ See `diffweb/README.md` for how to run it and `diffweb/ROADMAP.md` for ideas.
   itself and returns a `Response`, because anything FastAPI encodes after the
   handler returns is invisible to a handler-scoped timer.
 
+- **HUD: one GraphQL request, not one `gh pr list` per repo per section.**
+  Three aliased `search` fields come back in ~1.3s whatever the repo count.
+  The details (`nodes(ids:)`) take ~2.5s for 20 PRs, which is why they load
+  after the first paint.
+- **HUD: "ready for" is in the first query, not the lazy one.** The design said
+  it was a lazy detail, but the review list is ordered by it, and rows that
+  re-order after the page paints are worse than a slightly heavier first query.
+- **HUD: `user-review-requested:@me`, not `review-requested:@me`.** The latter
+  includes every team request, and CODEOWNERS makes those on nearly every PR.
+- **HUD: a re-requested reviewer needs no timeline digging.** GitHub puts them
+  back in `reviewRequests`, so the current list already means "requested and
+  has not reviewed since".
+- **HUD: `last activity` is the max timestamp, not the last timeline item.**
+  Timeline order and timestamp order disagree for rebased commits.
+- **A page script with no import or export shares tsc's global scope with the
+  others.** `hud.ts` declared `table` and broke against `catalog.ts`'s
+  `const table`; `export {}` makes it a module. Bun's IIFE bundles never
+  clashed - only the type check did.
+
 ## Verify
 
 `uv sync && poe fetch-diffweb-assets && poe diffweb`, then `poe diffweb-test`.

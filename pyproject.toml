@@ -46,7 +46,7 @@ _diffweb-serve = {cmd = "python -m diffweb", executor = "uv" }
 _diffweb-dev = {parallel = ["_diffweb-watch", "_diffweb-serve-reload"]}
 _diffweb-watch = "bun run --cwd diffweb watch"
 _diffweb-serve-reload = {cmd = "python -m diffweb --reload", executor = "uv" }
-_diffweb-pytest = {cmd = "pytest tests/test_diffweb.py -q", executor = "uv" }
+_diffweb-pytest = {cmd = "pytest tests/test_diffweb.py tests/test_diffweb_hud.py -q", executor = "uv" }
 
 [tool.uv]
 default-groups = ["dev", "diffweb"]

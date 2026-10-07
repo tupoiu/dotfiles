@@ -263,3 +263,48 @@ body.hide-reviewed .d2h-file-wrapper.is-reviewed { display: none; }
 .legend { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
 .legend .key { display: inline-flex; align-items: center; gap: 5px; }
 .legend .seg { width: 12px; border-radius: 2px; }
+
+/* Shared header: the link to the HUD, on every page. */
+.topnav { color: var(--dim); font-weight: 550; }
+.topnav.current { color: var(--fg); }
+
+/* HUD: my PRs across repos. The chips are the catalog's .pr-chip. */
+.hud-status { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.hud-section { margin-bottom: 28px; }
+.hud-section h2 { font-size: 15px; margin: 0 0 8px; }
+.hud-count {
+  font-size: 11px; font-weight: 550; color: var(--dim); vertical-align: 2px;
+  border: 1px solid var(--line); border-radius: 999px; padding: 0 7px; margin-left: 4px;
+}
+.hud-count:empty { display: none; }
+.hud-repo-name {
+  font: 600 12px/1.5 ui-monospace, monospace; color: var(--dim); margin: 14px 0 2px;
+}
+.hud-sub { font-size: 12px; color: var(--dim); margin: 14px 0 2px; font-weight: 550; }
+/* Fixed layout, so each repo's table in a section lines its columns up. */
+.hud-table { margin-bottom: 4px; table-layout: fixed; }
+.hud-table th:first-child { width: 55%; }
+.hud-table td { overflow-wrap: anywhere; }
+.hud-table tbody tr { cursor: default; }
+.hud-pr .pr-chip { margin: 0 8px 0 0; }
+.hud-repo {
+  font: 11px ui-monospace, monospace; color: var(--dim); margin-right: 8px;
+}
+.hud-wt {
+  font: 11px ui-monospace, monospace; margin-left: 8px; padding: 0 7px;
+  border: 1px solid var(--line); border-radius: 999px; white-space: nowrap;
+}
+.hud-reply { display: inline-block; margin-left: 8px; color: #d29922; font-weight: 550; }
+.hud-decision { margin-right: 8px; font-weight: 550; }
+.hud-approved { color: var(--add); }
+.hud-changes { color: var(--del); }
+.hud-waiting { color: var(--dim); margin-right: 4px; }
+.hud-reviewer {
+  display: inline-block; font-size: 11px; margin: 0 4px 2px 0; padding: 0 6px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
+}
+.hud-team { border-style: dashed; }
+.hud-error {
+  color: var(--del); border: 1px solid currentColor; border-radius: 6px; padding: 6px 10px;
+}
+.hud-error[hidden] { display: none; }
