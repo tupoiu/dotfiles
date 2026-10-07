@@ -44,6 +44,10 @@ limits:
 noise:
   collapse_by_default: ["*.lock", "*.sum", "**/generated/**", "**/*_pb2.py",
                         "**/*.pb.go", "**/__snapshots__/**"]
+tests:                     # what "hide tests" leaves out; git glob pathspecs
+  paths: ["**/test_*.py", "**/*_test.*", "**/*.test.*", "**/*.spec.*",
+          "**/conftest.py", "**/tests/**", "**/test/**", "**/__tests__/**",
+          "**/testdata/**"]
 tools:
   difft_path: null         # defaults to whatever `difft` is on PATH
   gh_path: null            # defaults to whatever `gh` is on PATH
@@ -89,6 +93,18 @@ see the whole first-parent diff instead - everything the merge brought in. The
 tick rides in the URL as `remerge=0` but is not remembered: the resolution is
 the default every time. Merge commits are marked `[merge]` in the from/to
 pickers. A range that merely *ends* at a merge is a range, and unaffected.
+
+**Hide tests.** Tick *hide tests* (or press `t`) to see the non-test diff: only
+the code, with every file matching `tests.paths` left out. The server does the
+filtering, as git pathspecs, so the file count, the `+`/`−` totals, the
+reviewed count and the lazy-loading limit are all for what is on screen. The
+summary says what was taken out (`2 test files hidden (+1578 −0)`), or that the
+range has none, so the page never looks like the whole range. It works the same
+on every range, untracked files and a merge's remerge diff included. The
+patterns are git's glob pathspecs, not `fnmatch` like `noise`: `*` stops at a
+`/`, and a leading `**/` matches at any depth. A file renamed *into* a test path
+shows as a deletion. The tick rides in the URL as `tests=0` but, like *true
+diff*, is not remembered. Set `tests.paths` to `[]` to remove the control.
 
 **Images.** git can only say `Binary files differ` about a picture, so each
 image file in the diff gets a pane showing it *before* and *after*, side by side
@@ -158,7 +174,8 @@ inline word-level highlighting survives it. The options live in
 
 **Keyboard.** `j`/`k` move between files (skipping any hidden by *hide reviewed*), `g`/`G` jump to first/last, `o` (or
 Enter) collapses the focused file, `v` marks it reviewed, `c` collapses or
-expands everything, `s` toggles side-by-side, and `?` shows the list. Shortcuts
+expands everything, `s` toggles side-by-side, `t` hides or shows test files, and
+`?` shows the list. Shortcuts
 stay out of the way while you are typing in the base-ref box or a commit select.
 
 File headers stick below the toolbar as you scroll, so you always know which

@@ -1028,6 +1028,114 @@ def test_hide_reviewed_control_is_present(client: TestClient, config: DiffwebCon
     assert 'id="hide-reviewed"' in client.get(f"/w/{wt_id(config, 'proj')}").text
 
 
+# --- the non-test diff -------------------------------------------------------
+
+
+@pytest.fixture
+def with_tests(world: dict[str, Path]) -> dict[str, Path]:
+    """`feature` also touches tests: a committed test module, a test fixture
+    under tests/, and an untracked Go test."""
+    repo = world["repo"]
+    (repo / "tests").mkdir()
+    commit(repo, "tests/fixture.json", "{}\n", "add a fixture")
+    commit(repo, "test_a.py", "assert 1\nassert 2\n", "add a test")
+    (repo / "src").mkdir()
+    (repo / "src" / "thing_test.go").write_text("package src\n")  # untracked
+    (repo / "src" / "thing.go").write_text("package src\n")       # untracked, not a test
+    return world
+
+
+def _paths(rows: object) -> set[str]:
+    return {r["path"] for r in rows} if isinstance(rows, list) else set(rows)
+
+
+def test_test_pathspecs_match_the_default_patterns(with_tests: dict[str, Path]) -> None:
+    repo = str(with_tests["repo"])
+    patterns = DiffwebConfig().tests.paths
+    mb = gitio.merge_base(repo, "origin/master")
+    only = gitio.numstat(repo, mb, WORKTREE, gitio.test_pathspecs(patterns, exclude=False))
+    assert _paths(only) == {"tests/fixture.json", "test_a.py", "src/thing_test.go"}
+
+
+def test_excluding_tests_filters_every_view_of_the_range(with_tests: dict[str, Path]) -> None:
+    repo = str(with_tests["repo"])
+    spec = gitio.test_pathspecs(DiffwebConfig().tests.paths, exclude=True)
+    mb = gitio.merge_base(repo, "origin/master")
+    code = {"a.txt", "b.txt", "c.txt", "src/thing.go"}
+    assert _paths(gitio.numstat(repo, mb, WORKTREE, spec)) == code
+    assert _paths(gitio.raw_changes(repo, mb, WORKTREE, spec)) == code
+    text = gitio.diff_text(repo, mb, WORKTREE, spec=spec)
+    assert "b/src/thing.go" in text and "+uncommitted" in text
+    assert "test_a.py" not in text and "fixture.json" not in text and "thing_test.go" not in text
+    # A per-file load of a test file under the filter is empty, not an error.
+    assert gitio.diff_text(repo, mb, WORKTREE, ["test_a.py"], spec) == ""
+    assert "+TWO" in gitio.diff_text(repo, mb, WORKTREE, ["a.txt"], spec)
+
+
+def test_excluding_tests_applies_to_a_remerge_diff(merged: dict[str, Path]) -> None:
+    repo = str(merged["repo"])
+    head = gitio.resolve_ref(repo, "HEAD")
+    assert _paths(gitio.remerge_numstat(repo, head)) == {"a.txt"}
+    spec = gitio.test_pathspecs(["a.*"], exclude=True)
+    assert gitio.remerge_numstat(repo, head, spec) == []
+    assert gitio.remerge_raw_changes(repo, head, spec) == {}
+    assert gitio.remerge_diff_text(repo, head, spec=spec) == ""
+
+
+def test_api_diff_hides_tests_on_request(
+    with_tests: dict[str, Path], client: TestClient, config: DiffwebConfig
+) -> None:
+    wid = wt_id(config, "proj")
+    everything = client.get(f"/api/w/{wid}/diff").json()
+    assert "test_a.py" in _paths(everything["files"])
+    assert everything["hidden_tests"] is None
+
+    data = client.get(f"/api/w/{wid}/diff", params={"tests": "false"}).json()
+    assert _paths(data["files"]) == {"a.txt", "b.txt", "c.txt", "src/thing.go"}
+    assert set(data["review"]) == set(data["shas"]) == _paths(data["files"])
+    assert "test_a.py" not in data["diff"] and "thing_test.go" not in data["diff"]
+    assert data["hidden_tests"] == {"files": 3, "added": 4, "removed": 0}
+
+
+def test_api_hidden_tests_reports_a_range_with_none(
+    with_tests: dict[str, Path], client: TestClient, config: DiffwebConfig
+) -> None:
+    wid = wt_id(config, "proj")
+    data = client.get(f"/api/w/{wid}/diff", params={"start": "HEAD~3", "end": "HEAD~2", "tests": "false"}).json()
+    assert _paths(data["files"]) == {"c.txt"}
+    assert data["hidden_tests"] == {"files": 0, "added": 0, "removed": 0}
+
+
+def test_with_and_without_tests_do_not_share_a_cache_entry(
+    with_tests: dict[str, Path], client: TestClient, config: DiffwebConfig
+) -> None:
+    wid = wt_id(config, "proj")
+    params = {"start": "HEAD~2", "end": "HEAD"}  # commit to commit, so cached
+    first = client.get(f"/api/w/{wid}/diff", params=params).json()["diff"]
+    second = client.get(f"/api/w/{wid}/diff", params={**params, "tests": "false"}).json()["diff"]
+    third = client.get(f"/api/w/{wid}/diff", params=params).json()["diff"]
+    assert first == third and "test_a.py" in first and "test_a.py" not in second
+
+
+def test_hide_tests_control_follows_the_config(
+    with_tests: dict[str, Path], client: TestClient, config: DiffwebConfig, tmp_path: Path
+) -> None:
+    wid = wt_id(config, "proj")
+    assert 'id="hide-tests"' in client.get(f"/w/{wid}").text
+
+    p = tmp_path / "diffweb.yaml"
+    data = yaml.safe_load(p.read_text())
+    data["tests"] = {"paths": []}
+    p.write_text(yaml.safe_dump(data))
+    from diffweb import app as app_module
+
+    app_module.reset_for_tests()
+    assert 'id="hide-tests"' not in client.get(f"/w/{wid}").text
+    # No patterns means nothing to hide, and nothing to report as hidden.
+    body = client.get(f"/api/w/{wid}/diff", params={"tests": "false"}).json()
+    assert "test_a.py" in _paths(body["files"]) and body["hidden_tests"] is None
+
+
 def _with_gh(tmp_path: Path, gh: Path, **features: object) -> None:
     p = tmp_path / "diffweb.yaml"
     data = yaml.safe_load(p.read_text())

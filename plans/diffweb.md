@@ -34,6 +34,7 @@ See `diffweb/README.md` for how to run it and `diffweb/ROADMAP.md` for ideas.
 - [x] Range shortcuts — one-click *working tree* / *whole branch* / *last commit* / *unpushed* / *staged*, on their own line above base/from/to (`diffweb/templates/worktree.html`) — 113 tests pass and every state was driven in a real browser in both themes
 - [x] Profile the diff-to-HTML path — server stage timings plus client fetch/render posted back, appended to a JSONL log and shown at `/profiles` (`diffweb/profiling.py`, `diffweb/app.py:178`) — 110 tests pass; `/profiles` screenshotted in both colour schemes on :8766
 - [x] Merge commits show their remerge diff by default, with a *true diff* tick for the first-parent diff (`diffweb/gitio.py` `remerge_*`, `diffweb/app.py:_is_single_merge`) — tests written first against a hand-resolved conflict; 140 pass; both readings screenshotted in both themes on :8799
+- [x] The non-test diff — a *hide tests* tick (and `t`) that leaves out files matching `tests.paths`, with the summary saying what was hidden (`diffweb/gitio.py` `test_pathspecs`, `diffweb/app.py` `api_diff`) — 8 new tests; ticked, URL-restored and toggled by key in a real browser in both themes on :8771
 - [ ] Open-in-editor links — deliberately deferred, see ROADMAP
 - [ ] code-server + GitLens comparison — never spiked, nothing was running on this VM
 
@@ -127,6 +128,19 @@ See `diffweb/README.md` for how to run it and `diffweb/ROADMAP.md` for ideas.
 - **This VM has docker, not podman**, despite `install.sh` installing podman. The 8
   pre-existing failures in `tests/test_container.py` and `tests/test_playwright_container.py`
   are that, not diffweb.
+- **Hide tests is filtered by git, not in Python.** `tests.paths` turns into
+  `:(exclude,glob)` pathspecs on every call behind the range: numstat, raw,
+  the patch, `ls-files --others` for untracked files, `show --remerge-diff`
+  and the difft run. Filtering the patch text in Python would mean parsing
+  quoted and renamed paths out of `diff --git` lines, and the counts and the
+  body could disagree. The cost: a rename *into* a test path reads as a
+  deletion, because pathspecs apply before rename detection. The "N test files
+  hidden" figure is one more numstat with the same patterns as positive
+  pathspecs, and only runs while the tick is on. A spec of only exclusions
+  needs no positive path beside it (checked on git 2.34).
+- **`.controls label { display: flex }` beat the `hidden` attribute**, so
+  *true diff* showed on every range, not just on merge commits.
+  `.controls label[hidden]` restores it.
 
 ### From the three-worktree round
 

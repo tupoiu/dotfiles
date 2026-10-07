@@ -22,6 +22,27 @@ Format - one entry per session, newest first:
 
 ---
 
+## 2026-10-06 - the non-test diff (*hide tests*)
+- `poe diffweb-test` - helped, 6s. The same five `remerge` tests still fail
+  because this machine's git is 2.34 and `--remerge-diff` arrived in 2.36. I
+  ran them on a `git archive` of HEAD to prove that, which a skip would have
+  made unnecessary. A test that only asserts "empty" passes trivially on that
+  git, so I had to give the new remerge test a positive check first.
+  **Improve:** skip on `git --version` < 2.36, as the 2026-09-22 entry asked.
+- `poe diffweb-shot` - did not help much. `libnss3`/`libnspr4` were missing
+  again; the `apt-get download` + `dpkg -x` + `LD_LIBRARY_PATH` recipe from the
+  2026-09-16 entry worked first time. Then `--out` was read as a page again (4
+  bogus errors), and the full-page PNGs are 95,000px tall, so they read as a
+  thin stripe. With no PIL or ImageMagick on the box, a viewport shot meant a
+  throwaway Playwright script in `diffweb/`, which also did the checkbox and
+  `t` key checks. **Improve:** a `--viewport` (no `fullPage`) flag, a
+  `--check <css>` flag, and the `--out` fix.
+- Picking the worktree for a second instance - `curl / | grep /w/ | head -1`
+  picked a *different* worktree (a linked one sorts first), and its diff looked
+  so wrong that I suspected the new code. The id is
+  `sha1(path)[:12]`. **Improve:** let `shot.mjs` take a worktree path and
+  work out the id itself.
+
 ## 2026-09-16 - images in diffs
 
 - `poe diffweb-test` / `world` fixture - helped. A helper that commits, renames,

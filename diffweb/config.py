@@ -55,6 +55,26 @@ class Noise(BaseModel):
     )
 
 
+class Tests(BaseModel):
+    """Test files, which the diff page can leave out to show only the code."""
+
+    # git glob pathspecs (`*` stops at `/`, a leading `**/` matches at any
+    # depth), so git itself does the filtering.
+    paths: list[str] = Field(
+        default_factory=lambda: [
+            "**/test_*.py",
+            "**/*_test.*",
+            "**/*.test.*",
+            "**/*.spec.*",
+            "**/conftest.py",
+            "**/tests/**",
+            "**/test/**",
+            "**/__tests__/**",
+            "**/testdata/**",
+        ]
+    )
+
+
 class Tools(BaseModel):
     difft_path: str | None = None
     gh_path: str | None = None
@@ -69,6 +89,7 @@ class DiffwebConfig(BaseModel):
     features: Features = Field(default_factory=Features)
     limits: Limits = Field(default_factory=Limits)
     noise: Noise = Field(default_factory=Noise)
+    tests: Tests = Field(default_factory=Tests)
     tools: Tools = Field(default_factory=Tools)
     state_db: str = "~/.local/state/diffweb/state.db"
     profile_log: str = "~/.local/state/diffweb/profiles.jsonl"

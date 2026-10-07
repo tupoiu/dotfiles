@@ -94,10 +94,12 @@ def find_worktree(wt_id: str, config: DiffwebConfig) -> Worktree:
 
 
 # Resolved diffs are immutable once both ends are commits, so they cache well.
-_diff_cache: dict[tuple[str, str, str, bool], str] = {}
+_diff_cache: dict[tuple[str, str, str, bool, tuple[str, ...]], str] = {}
 
 
-def cached_diff(path: str, start: str, end: str, max_cacheable: int, remerge: bool = False) -> str:
+def cached_diff(
+    path: str, start: str, end: str, max_cacheable: int, remerge: bool = False, spec: list[str] | None = None
+) -> str:
     """Diff text, memoised while both ends name commits.
 
     Oversized diffs are computed but not kept: those are the ones the page
@@ -105,11 +107,15 @@ def cached_diff(path: str, start: str, end: str, max_cacheable: int, remerge: bo
     """
     if end in (WORKTREE, INDEX):
         # Both ends move under our feet, so neither is safe to memoise.
-        return gitio.diff_text(path, start, end)
-    key = (path, start, end, remerge)
+        return gitio.diff_text(path, start, end, spec=spec or ())
+    key = (path, start, end, remerge, tuple(spec or ()))
     if key in _diff_cache:
         return _diff_cache[key]
-    text = gitio.remerge_diff_text(path, end) if remerge else gitio.diff_text(path, start, end)
+    text = (
+        gitio.remerge_diff_text(path, end, spec=spec or ())
+        if remerge
+        else gitio.diff_text(path, start, end, spec=spec or ())
+    )
     if len(text) <= max_cacheable:
         if len(_diff_cache) > 32:
             _diff_cache.clear()
@@ -196,6 +202,7 @@ def worktree_page(
             "end": end or "",
             "features": config.features,
             "difft_available": bool(config.tools.difft_path or shutil.which("difft")),
+            "has_test_paths": bool(config.tests.paths),
             "pr": forge.status(
                 get_state(),
                 wt.id,
@@ -226,6 +233,7 @@ def api_diff(
     end: str | None = None,
     renderer: str = "line",
     remerge: bool | None = None,
+    tests: bool = True,
     files: list[str] | None = Query(default=None),
     config: DiffwebConfig = Depends(get_config),
 ) -> Any:
@@ -244,13 +252,34 @@ def api_diff(
         merge = e not in (WORKTREE, INDEX) and _is_single_merge(wt.path, s, e)
         remerge = merge and remerge is not False and renderer != "structural"
 
+    # `tests=false` drops test files from every view of the range. git does the
+    # filtering, so the counts, review state and patch cannot disagree.
+    patterns = config.tests.paths if not tests else []
+    spec = gitio.test_pathspecs(patterns, exclude=True)
+
+    def range_numstat(pathspec: list[str]) -> list[dict[str, object]]:
+        if remerge:
+            return gitio.remerge_numstat(wt.path, e, pathspec)
+        return gitio.numstat(wt.path, s, e, pathspec)
+
     with timer.stage("numstat"):
-        stats = gitio.remerge_numstat(wt.path, e) if remerge else gitio.numstat(wt.path, s, e)
+        stats = range_numstat(spec)
+        # What was left out, so the page can say so rather than look complete.
+        hidden_tests = None
+        if patterns and not files:
+            left_out = range_numstat(gitio.test_pathspecs(patterns, exclude=False))
+            hidden_tests = {
+                "files": len(left_out),
+                "added": sum(int(r["added"] or 0) for r in left_out),
+                "removed": sum(int(r["removed"] or 0) for r in left_out),
+            }
         for row in stats:
             row["noisy"] = gitio.is_noisy(str(row["path"]), config.noise.collapse_by_default)
 
     with timer.stage("shas"):
-        changes = gitio.remerge_raw_changes(wt.path, e) if remerge else gitio.raw_changes(wt.path, s, e)
+        changes = (
+            gitio.remerge_raw_changes(wt.path, e, spec) if remerge else gitio.raw_changes(wt.path, s, e, spec)
+        )
         shas = {name: c["sha"] for name, c in changes.items()}
         review = state.review_status(wt_id, shas) if config.features.reviewed_state else {}
         # The page fetches an image's two sides by path, so a rename needs to
@@ -267,7 +296,7 @@ def api_diff(
         # diff text, so the page draws it exactly like a line diff.
         with timer.stage("diff"):
             try:
-                diff = gitio.structural_diff(wt.path, s, e, config.tools.difft_path, files)
+                diff = gitio.structural_diff(wt.path, s, e, config.tools.difft_path, files, spec)
             except FileNotFoundError:
                 return JSONResponse(
                     {"error": "difft not found. Install it with: cargo binstall difftastic"},
@@ -278,9 +307,9 @@ def api_diff(
         with timer.stage("diff"):
             if files:
                 diff = (
-                    gitio.remerge_diff_text(wt.path, e, files)
+                    gitio.remerge_diff_text(wt.path, e, files, spec)
                     if remerge
-                    else gitio.diff_text(wt.path, s, e, files)
+                    else gitio.diff_text(wt.path, s, e, files, spec)
                 )
                 lazy = False
             else:
@@ -288,7 +317,7 @@ def api_diff(
                 # output was thrown away doubled the most expensive stage of the
                 # request, and saved no memory either - the subprocess buffers the
                 # whole output regardless.
-                diff = cached_diff(wt.path, s, e, config.limits.max_inline_diff_bytes, remerge)
+                diff = cached_diff(wt.path, s, e, config.limits.max_inline_diff_bytes, remerge, spec)
                 lazy = (
                     len(diff.encode()) > config.limits.max_inline_diff_bytes
                     or len(stats) > config.limits.max_inline_files
@@ -304,6 +333,7 @@ def api_diff(
         "merge": merge,
         "remerge": remerge,
         "files": stats,
+        "hidden_tests": hidden_tests,
         "review": review,
         "shas": shas,
         "lazy": lazy,

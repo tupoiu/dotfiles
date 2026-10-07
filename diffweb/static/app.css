@@ -35,6 +35,8 @@ main { padding: 16px; }
 .control-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .controls label { color: var(--dim); display: flex; align-items: center; gap: 5px; }
 .controls .chk { cursor: pointer; }
+/* `display: flex` above beats the hidden attribute, so restore it. */
+.controls label[hidden] { display: none; }
 .wt-name { font-weight: 600; }
 
 /* Range shortcuts: the three ranges worth one click, on their own line. */

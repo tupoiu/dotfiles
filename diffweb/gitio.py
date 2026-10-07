@@ -12,6 +12,7 @@ import os
 import re
 import shutil
 import subprocess
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -202,13 +203,29 @@ def _diff_args(start: str, end: str) -> list[str]:
     return [start] if end == WORKTREE else [start, end]
 
 
-def diff_text(path: str, start: str, end: str, files: list[str] | None = None) -> str:
-    args = ["diff", "--no-color", "-M", "-C", *_diff_args(start, end)]
-    if files:
-        args += ["--", *files]
+def test_pathspecs(patterns: Sequence[str], *, exclude: bool) -> list[str]:
+    """git glob pathspecs that drop (or keep only) the files matching `patterns`.
+
+    git does the filtering, so the numstat, the raw changes and the patch all
+    agree on which files are in the diff, for every kind of range.
+    """
+    magic = "exclude,glob" if exclude else "glob"
+    return [f":({magic}){p}" for p in patterns]
+
+
+def _pathspec_args(files: Sequence[str] | None, spec: Sequence[str]) -> list[str]:
+    # A spec of only exclusions means "everything but these", so it needs no
+    # positive path beside it.
+    return ["--", *(files or ()), *spec] if files or spec else []
+
+
+def diff_text(
+    path: str, start: str, end: str, files: list[str] | None = None, spec: Sequence[str] = ()
+) -> str:
+    args = ["diff", "--no-color", "-M", "-C", *_diff_args(start, end), *_pathspec_args(files, spec)]
     text = _try_git(path, *args) or ""
     if end == WORKTREE:
-        text += "".join(u.patch for u in untracked_changes(path, files))
+        text += "".join(u.patch for u in untracked_changes(path, files, spec))
     return text
 
 
@@ -231,9 +248,9 @@ class Untracked:
     patch: str
 
 
-def untracked_files(path: str) -> list[str]:
+def untracked_files(path: str, spec: Sequence[str] = ()) -> list[str]:
     """Untracked, non-ignored files. A nested repo shows up as `dir/` and is skipped."""
-    out = _try_git(path, "ls-files", "--others", "--exclude-standard") or ""
+    out = _try_git(path, "ls-files", "--others", "--exclude-standard", *_pathspec_args(None, spec)) or ""
     return [f for f in out.splitlines() if f and not f.endswith("/")]
 
 
@@ -270,10 +287,12 @@ def _untracked_entry(path: str, file: str, mtime_ns: int, size: int) -> Untracke
     )
 
 
-def untracked_changes(path: str, files: list[str] | None = None) -> list[Untracked]:
+def untracked_changes(
+    path: str, files: list[str] | None = None, spec: Sequence[str] = ()
+) -> list[Untracked]:
     wanted = set(files) if files else None
     out: list[Untracked] = []
-    for f in untracked_files(path):
+    for f in untracked_files(path, spec):
         if wanted is not None and f not in wanted:
             continue
         try:
@@ -340,8 +359,11 @@ def is_image(path: str) -> bool:
     return bool(kind and kind.startswith("image/"))
 
 
-def numstat(path: str, start: str, end: str) -> list[dict[str, object]]:
-    rows = _parse_numstat(_try_git(path, "diff", "--numstat", "-M", "-C", *_diff_args(start, end)) or "")
+def numstat(path: str, start: str, end: str, spec: Sequence[str] = ()) -> list[dict[str, object]]:
+    rows = _parse_numstat(
+        _try_git(path, "diff", "--numstat", "-M", "-C", *_diff_args(start, end), *_pathspec_args(None, spec))
+        or ""
+    )
     if end == WORKTREE:
         rows += [
             {
@@ -352,7 +374,7 @@ def numstat(path: str, start: str, end: str) -> list[dict[str, object]]:
                 "image": is_image(u.path),
                 "untracked": True,
             }
-            for u in untracked_changes(path)
+            for u in untracked_changes(path, spec=spec)
         ]
     return rows
 
@@ -376,10 +398,14 @@ def _parse_raw(path: str, out: str) -> dict[str, dict[str, str]]:
     return changes
 
 
-def raw_changes(path: str, start: str, end: str) -> dict[str, dict[str, str]]:
-    changes = _parse_raw(path, _try_git(path, "diff", "--raw", "-M", "-C", *_diff_args(start, end)) or "")
+def raw_changes(path: str, start: str, end: str, spec: Sequence[str] = ()) -> dict[str, dict[str, str]]:
+    changes = _parse_raw(
+        path,
+        _try_git(path, "diff", "--raw", "-M", "-C", *_diff_args(start, end), *_pathspec_args(None, spec))
+        or "",
+    )
     if end == WORKTREE:
-        for u in untracked_changes(path):
+        for u in untracked_changes(path, spec=spec):
             changes[u.path] = {"status": "A", "old_path": "", "sha": u.sha}
     return changes
 
@@ -429,23 +455,25 @@ def is_merge_commit(path: str, sha: str) -> bool:
     return len(parents(path, sha)) > 1
 
 
-def _remerge_args(sha: str, files: list[str] | None = None, *extra: str) -> list[str]:
-    args = ["show", "--remerge-diff", "--format=", "--no-color", "-M", "-C", *extra, sha]
-    if files:
-        args += ["--", *files]
-    return args
+def _remerge_args(
+    sha: str, files: list[str] | None = None, *extra: str, spec: Sequence[str] = ()
+) -> list[str]:
+    return ["show", "--remerge-diff", "--format=", "--no-color", "-M", "-C", *extra, sha,
+            *_pathspec_args(files, spec)]
 
 
-def remerge_diff_text(path: str, sha: str, files: list[str] | None = None) -> str:
-    return _try_git(path, *_remerge_args(sha, files)) or ""
+def remerge_diff_text(
+    path: str, sha: str, files: list[str] | None = None, spec: Sequence[str] = ()
+) -> str:
+    return _try_git(path, *_remerge_args(sha, files, spec=spec)) or ""
 
 
-def remerge_numstat(path: str, sha: str) -> list[dict[str, object]]:
-    return _parse_numstat(_try_git(path, *_remerge_args(sha, None, "--numstat")) or "")
+def remerge_numstat(path: str, sha: str, spec: Sequence[str] = ()) -> list[dict[str, object]]:
+    return _parse_numstat(_try_git(path, *_remerge_args(sha, None, "--numstat", spec=spec)) or "")
 
 
-def remerge_raw_changes(path: str, sha: str) -> dict[str, dict[str, str]]:
-    return _parse_raw(path, _try_git(path, *_remerge_args(sha, None, "--raw")) or "")
+def remerge_raw_changes(path: str, sha: str, spec: Sequence[str] = ()) -> dict[str, dict[str, str]]:
+    return _parse_raw(path, _try_git(path, *_remerge_args(sha, None, "--raw", spec=spec)) or "")
 
 
 def remerge_blob_shas(path: str, sha: str) -> dict[str, str]:
@@ -453,7 +481,12 @@ def remerge_blob_shas(path: str, sha: str) -> dict[str, str]:
 
 
 def structural_diff(
-    path: str, start: str, end: str, difft: str | None = None, files: list[str] | None = None
+    path: str,
+    start: str,
+    end: str,
+    difft: str | None = None,
+    files: list[str] | None = None,
+    spec: Sequence[str] = (),
 ) -> str:
     """The range as a unified diff whose hunks are difftastic's verdict.
 
@@ -473,11 +506,9 @@ def structural_diff(
         "DFT_COLOR": "never",
     }
     # Same -M/-C as the line diff so both see the same set of files.
-    args = ["diff", "--ext-diff", "-M", "-C", *_diff_args(start, end)]
-    if files:
-        args += ["--", *files]
+    args = ["diff", "--ext-diff", "-M", "-C", *_diff_args(start, end), *_pathspec_args(files, spec)]
     difft_out = run_git(path, *args, env=env)
-    git_diff = diff_text(path, start, end, files)
+    git_diff = diff_text(path, start, end, files, spec)
     return structural.merge(
         git_diff, difft_out, lambda rev, file: blob_bytes(path, rev, file), start, end
     )

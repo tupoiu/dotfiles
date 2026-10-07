@@ -12,6 +12,7 @@
     ["v", "mark the focused file reviewed"],
     ["c", "collapse or expand all"],
     ["s", "toggle side-by-side"],
+    ["t", "hide or show test files"],
     ["g / G", "first / last file"],
     ["?", "this help"],
   ];
@@ -116,6 +117,13 @@
         const sbs = document.getElementById("sbs");
         sbs.checked = !sbs.checked;
         sbs.dispatchEvent(new Event("change"));
+        break;
+      }
+      case "t": {
+        const tests = document.getElementById("hide-tests");
+        if (!tests) return;
+        tests.checked = !tests.checked;
+        tests.dispatchEvent(new Event("change"));
         break;
       }
       case "?": helpOverlay(); break;

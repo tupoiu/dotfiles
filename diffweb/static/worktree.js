@@ -7,6 +7,7 @@ const $start = document.getElementById("start");
 const $end = document.getElementById("end");
 const $sbs = document.getElementById("sbs");
 const $hideReviewed = document.getElementById("hide-reviewed");
+const $hideTests = document.getElementById("hide-tests");
 const $structural = document.getElementById("structural");
 const $trueDiff = document.getElementById("true-diff");
 const $status = document.getElementById("status");
@@ -41,6 +42,14 @@ $structural?.addEventListener("change", render);
 // the resolution is the default reading every time.
 $trueDiff.checked = new URLSearchParams(location.search).get("remerge") === "0";
 $trueDiff.addEventListener("change", render);
+// The non-test diff. The server leaves the test files out, so the counts and
+// the lazy limit are for what is on screen. It rides in the URL like the
+// true-diff tick, and for the same reason is not remembered: a page that
+// silently hides the tests the next time is easy to misread.
+if ($hideTests) {
+  $hideTests.checked = new URLSearchParams(location.search).get("tests") === "0";
+  $hideTests.addEventListener("change", render);
+}
 
 $hideReviewed.checked = localStorage.getItem("diffweb.hide-reviewed") === "1";
 $hideReviewed.addEventListener("change", () => {
@@ -135,6 +144,7 @@ function syncUrl() {
   if ($start.value) q.set("start", $start.value);
   if ($end.value) q.set("end", $end.value);
   if ($trueDiff.checked) q.set("remerge", "0");
+  if ($hideTests?.checked) q.set("tests", "0");
   history.replaceState(null, "", `${location.pathname}?${q}`);
 }
 
@@ -190,6 +200,7 @@ async function renderDiff() {
   if ($end.value) q.end = $end.value;
   if ($structural?.checked) q.renderer = "structural";
   if ($trueDiff.checked) q.remerge = "false";
+  if ($hideTests?.checked) q.tests = "false";
 
   const fetchStart = performance.now();
   const r = await fetch(api("diff", q));
@@ -214,7 +225,7 @@ async function renderDiff() {
     `${files.length} files · <span class="add">+${added}</span> <span class="del">−${removed}</span>` +
     ` · ${reviewed}/${files.length} reviewed` +
     (changed ? ` · <span class="warn">${changed} changed since you reviewed</span>` : "") +
-    mergeNote(data) + structuralNote(data);
+    testsNote(data) + mergeNote(data) + structuralNote(data);
 
   const renderStart = performance.now();
   if (data.lazy) {
@@ -226,6 +237,15 @@ async function renderDiff() {
   }
   status("");
   reportProfile(data.profile_id, fetchMs, performance.now() - renderStart);
+}
+
+// Say what "hide tests" took out, so the page never looks like the whole range.
+function testsNote(data) {
+  const t = data.hidden_tests;
+  if (!t) return "";
+  if (!t.files) return ` · <span class="merge-note">no test files in this range</span>`;
+  return ` · <span class="merge-note">${t.files} test file${t.files === 1 ? "" : "s"} hidden` +
+    ` (<span class="add">+${t.added}</span> <span class="del">−${t.removed}</span>)</span>`;
 }
 
 // Say which of the two readings of a merge commit is on screen, since the
