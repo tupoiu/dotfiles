@@ -7,24 +7,14 @@ Scratchpad. Add anything, however half-formed - nothing here is committed to.
 - **Open-in-editor links** - click a hunk to jump to file+line in code-server or
   local VS Code via a URL handler. Cut from v1 by choice, not difficulty.
 - **Inline comments** - notes pinned to a file+line, stored in the same SQLite DB.
-  The thing Forgejo has that we do not.
 
 ## Next up
 
-- In the diff page for diffweb (e.g. the page for a given worktree), I often find
-  that I want to see 1. just the diff of the current working tree, 2. just the diff
-  of the working tree against the merge base with origin/master, 3. just the diff of
-  the staging area against master.  Add shortcuts for each of these, making a line
-  between the branch name and the base/from/to part of the UI, and put the icons
-  there. Add this task verbatim to the roadmap, and then complete it. If your testing
-  infrastructure doesn't work, STOP and escalate immediately.
-  Also add one for the last commit (add that to the roadmap entry, too)
-  Add an button in the list next to "last commit, staged, ..." for "unpushed changes"
-
+- Refactor the frontend to use TS instead of JS
 - ~~Make the "chips" column in the homepage also show when the PR was first made if
   it exists, or if theres "No PR ({refresh emoji} 1m)" or "No PR ({refresh} 2d)".~~
   Done - the 🔄 is clickable and re-asks gh.
-- Show which Claude agents have edited files on a worktree, on the homepage.
+- Low prio: Show which Claude agents have edited files on a worktree, on the homepage.
   Derisked by reading `~/.claude/projects/*/*.jsonl` (2026-08-21):
   - **Feasible.** Every record carries `cwd`, `gitBranch`, `sessionId` and a
     timestamp, and `Edit`/`Write`/`NotebookEdit` tool_use blocks carry
@@ -51,6 +41,8 @@ Scratchpad. Add anything, however half-formed - nothing here is committed to.
   small page that shows recent profiles. Profiles are local noise - gitignore
   them.~~ Done - see `diffweb/profiling.py` and `/profiles`.
 
+#### Claude
+
 - **`git diff` runs twice per request.** The first thing profiling turned up:
   `gitio.diff_size_bytes` shells out for the whole diff just to measure its
   length, then `cached_diff` computes the identical diff again - 22ms each on
@@ -72,13 +64,22 @@ Scratchpad. Add anything, however half-formed - nothing here is committed to.
 
 ## Ideas
 
-- Image compare modes beyond side-by-side: onion-skin, swipe and a pixel-diff
+- Low prio: Image compare modes beyond side-by-side: onion-skin, swipe and a pixel-diff
   heatmap, the way GitHub offers. The blob endpoint and the per-side pane are
   in place; this is client-side work on top of them.
 
 - AI-generated change summary per worktree, shown on the catalog row.
-- Stacked view: one section per commit rather than one flattened range.
-- Merge commits: the remerge/true-diff split only applies to a single merge
+- HUD: A new page off the homepage which shows:
+  - all of my open PRs (whether they're draft/non-draft) by repo which should be declared in the diffweb config file. Next to the name of the PR there should be a chip like we have in diffweb that is a like to the github page for the PR.
+  - all of my PRs closed/merged within the last 3 workdays
+  - their last activity (e.g. commit/comment)
+  - if they're missing review from any specific people or teams
+  - All PRs I'm tagged for review on (with age since they became "ready")
+  The extra less important details should be lazy loaded. The code for this part of the app should be quite separated from the worktree diff viewer part (separate subfolder).
+
+#### Claude
+
+- Low prio: Merge commits: the remerge/true-diff split only applies to a single merge
   commit. A range containing several merges could offer "hide clean merges" or
   a per-commit remerge view once the stacked view exists. `--remerge-diff`
   against a chosen *second* parent (what did the merge do to the side branch?)
@@ -87,10 +88,9 @@ Scratchpad. Add anything, however half-formed - nothing here is committed to.
   the merge in memory. It is cached like any other commit-to-commit diff, but
   the first hit on a large merge may be worth a "redoing merge…" status.
 - "What changed since I last looked" as a cross-worktree feed on the catalog page.
-- Keyboard navigation between *worktrees* (`]`/`[`); within a diff it already exists.
-- Word-level intra-line highlighting on the line renderer (diff2html does some of
+- Low prio: Keyboard navigation between *worktrees* (`]`/`[`); within a diff it already exists.
+- Low prio: Word-level intra-line highlighting on the line renderer (diff2html does some of
   this already; difftastic does it properly).
 - Ignore-patterns per repo, e.g. always collapse `Cargo.lock` and generated files.
-- Non-git-worktree repos: the discovery code already handles plain clones, but
+- Low prio: Non-git-worktree repos: the discovery code already handles plain clones, but
   nothing exercises that path yet.
-- Serve over the coder port-forward with a stable URL rather than remembering 8765.
