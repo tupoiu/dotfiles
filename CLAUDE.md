@@ -8,3 +8,5 @@ It uses `poe` as its task runner. Run `poe` to see what it exposes (and consider
 Read READMEs in the folder you're looking at when answering.
 
 Test changes with unit tests, and then, when you think the change is basically ready, have a look using playwright at the real webpage to check the page is working as you expect.
+
+When adding items to a ROADMAP, specifically label items you add under a "Claude:" section. This makes it easy to identify the source of the idea.
