@@ -1,6 +1,17 @@
 {
-  "name": "diffweb-devtools",
+  "name": "diffweb-web",
   "private": true,
-  "description": "Playwright, only for diffweb/shot.mjs. The app itself ships no JS build step.",
-  "devDependencies": { "playwright": "^1.49.0" }
+  "description": "diffweb's browser code (web/*.ts), bundled by bun into static/dist/. Dev tooling: type checking and playwright for shot.ts.",
+  "type": "module",
+  "scripts": {
+    "build": "bun build web/catalog.ts web/profiles.ts web/worktree.ts --outdir static/dist --target browser --format=iife --sourcemap=linked",
+    "watch": "bun run build --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.0",
+    "diff2html": "3.4.51",
+    "playwright": "^1.49.0",
+    "typescript": "^5.6.0"
+  }
 }

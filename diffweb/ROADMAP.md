@@ -96,3 +96,13 @@ Scratchpad. Add anything, however half-formed - nothing here is committed to.
 - Ignore-patterns per repo, e.g. always collapse `Cargo.lock` and generated files.
 - Low prio: Non-git-worktree repos: the discovery code already handles plain clones, but
   nothing exercises that path yet.
+- Bundle diff2html (and highlight.js) from npm with `bun build` instead of
+  vendoring the UMD bundles with `fetch-assets.sh`. The package is already a
+  dev dependency for its types, so this would remove the two version pins that
+  must be bumped together and most of the CDN fetch.
+- On git older than 2.36 a merge commit's default view is silently empty,
+  because `--remerge-diff` is an unknown option and `_try_git` swallows the
+  failure. Detect it once and fall back to the true diff with a note.
+- Low prio: the dark theme's paired changed lines (`d2h-change`) keep
+  diff2html's light yellow/green background, which is loud next to the dark
+  red/green of plain removals and additions.

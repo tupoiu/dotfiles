@@ -1,9 +1,13 @@
 // The diff2html options the diff page renders with.
 //
-// Kept in its own file so tests can assert against exactly what ships rather
+// Kept in its own module so tests can assert against exactly what ships rather
 // than against a copy that can drift.
 
-function diffwebRenderOptions({ sideBySide = false, drawFileList = true } = {}) {
+import type { Diff2HtmlUIConfig } from "diff2html/lib/ui/js/diff2html-ui-base";
+
+export function diffwebRenderOptions(
+  { sideBySide = false, drawFileList = true }: { sideBySide?: boolean; drawFileList?: boolean } = {},
+): Diff2HtmlUIConfig {
   return {
     drawFileList,
     // "lines" and "words" pair each deletion with an insertion, which renders a
@@ -16,9 +20,4 @@ function diffwebRenderOptions({ sideBySide = false, drawFileList = true } = {}) 
     fileContentToggle: false,
     stickyFileHeaders: true,
   };
-}
-
-// Loaded with a <script> tag by the page, and required directly by the tests.
-if (typeof module !== "undefined" && module.exports) {
-  module.exports = { diffwebRenderOptions };
 }

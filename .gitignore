@@ -13,8 +13,9 @@ wheels/
 diffweb/static/vendor/*
 !diffweb/static/vendor/.gitkeep
 
-# diffweb dev tooling (playwright for diffweb/shot.mjs)
+# diffweb page scripts, bundled from diffweb/web/*.ts (poe diffweb-build)
+diffweb/static/dist/
+# diffweb dev tooling (bun install --cwd diffweb)
 diffweb/node_modules/
-diffweb/package-lock.json
 # diffweb profile log, if it is configured inside the repo
 profiles.jsonl

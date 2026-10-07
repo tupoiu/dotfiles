@@ -12,17 +12,21 @@ It is deliberately read-only and single-user: it binds `127.0.0.1`, shells out t
 ## Run it
 
 ```console
-$ uv sync                     # installs everything into the project venv
-$ poe fetch-diffweb-assets    # one-off: vendors diff2html + highlight.js
-$ poe diffweb                 # http://127.0.0.1:8765
+$ uv sync                     # installs the server into the project venv
+$ poe fetch-diffweb-assets    # one-off: vendors diff2html + highlight.js, bun-installs the dev tools
+$ poe diffweb                 # builds the page scripts, then serves http://127.0.0.1:8765
 ```
 
-`poe diffweb-dev` is the same with auto-reload. On the hosted VM, forward port
+The page scripts are TypeScript in `web/`, bundled by [bun] into the gitignored
+`static/dist/`, so you need `bun` on PATH.
+The build itself needs nothing from `bun install`.
+
+`poe diffweb-dev` is the same with auto-reload, and rebuilds the scripts on save. On the hosted VM, forward port
 8765 and open it in Chrome. There is also a `diffweb` fish function that starts
 the server if it isn't already up and prints the URL.
 
-Everything except the optional structural diff comes from `uv sync` - nothing is
-installed globally and `install.sh` is untouched.
+Everything except `bun` and the optional structural diff comes from `uv sync` and
+`bun install` - nothing else is installed globally and `install.sh` is untouched.
 
 ## Configuration
 
@@ -170,7 +174,7 @@ additions; diff2html's `matching` option pairs each removal with an addition and
 renders `-,+,-,+` instead. Two related removals followed by their two
 replacements read better, so `matching` is `none` - which costs nothing, as the
 inline word-level highlighting survives it. The options live in
-`static/render-options.js` so the tests bind to what actually ships.
+`web/render-options.ts` so the tests bind to what actually ships.
 
 **Keyboard.** `j`/`k` move between files (skipping any hidden by *hide reviewed*), `g`/`G` jump to first/last, `o` (or
 Enter) collapses the focused file, `v` marks it reviewed, `c` collapses or
@@ -226,9 +230,12 @@ capped at `profile_keep`.
 | `state.py` | SQLite reviewed-state and per-worktree base-ref overrides |
 | `app.py` | FastAPI routes |
 | `static/favicon.svg` | the diff mark: a rounded square, red half and green half; also the browser icon |
-| `static/render-options.js` | the diff2html options the page renders with, shared with the tests |
-| `static/`, `templates/` | the UI; `static/vendor/` is gitignored, populated by `poe fetch-diffweb-assets` |
-| `shot.mjs` | screenshots the running app (see below) |
+| `web/*.ts` | the page scripts: one entry per page (`catalog`, `worktree`, `profiles`), bundled by bun into `static/dist/` |
+| `web/render-options.ts` | the diff2html options the page renders with, shared with the tests |
+| `web/keys.ts` | keyboard navigation, imported by `worktree.ts` |
+| `static/`, `templates/` | the UI; `static/vendor/` and `static/dist/` are gitignored, populated by `poe fetch-diffweb-assets` and `poe diffweb-build` |
+| `package.json`, `tsconfig.json` | the bun build, plus dev-only tooling: `tsc`, playwright, diff2html's types |
+| `shot.ts` | screenshots the running app (see below) |
 
 # Working on diffweb
 
@@ -238,7 +245,7 @@ Four commands. The last one is not optional - see *Look at it* below.
 
 ```console
 $ uv sync && poe fetch-diffweb-assets   # once per checkout
-$ poe diffweb-test                      # ~2s, fully isolated
+$ poe diffweb-test                      # build + tsc + pytest, ~10s, fully isolated
 $ poe diffweb                           # serve on 127.0.0.1:8765
 $ poe diffweb-shot                      # screenshot what is running, then read the PNGs
 ```
@@ -252,12 +259,17 @@ any. Point it somewhere else with `--port`, `--out`, or explicit paths:
 $ poe diffweb-shot -- --port 8766 /profiles
 ```
 
-It needs Playwright, which is dev-only tooling and not part of `uv sync`:
+It needs Playwright, which is dev-only tooling and not part of `uv sync`. The
+package comes with `poe fetch-diffweb-assets` (`bun install`); the browser is
+a separate download:
 
 ```console
-$ npm --prefix diffweb install
-$ npx playwright install --with-deps chromium   # needs sudo for the system libs
+$ bunx --cwd diffweb playwright install chromium
+$ sudo apt-get install -y libnss3 libnspr4        # or: playwright install-deps chromium
 ```
+
+`ldd ~/.cache/ms-playwright/chromium-*/chrome-linux64/chrome | grep 'not found'`
+lists any system libraries the browser is still missing.
 
 **Log whether the tooling helped.** When you are done, add an entry to
 `TOOLING_ROADMAP.md` saying whether each tool you used earned its place and what
@@ -269,7 +281,7 @@ who did not hit it.
 this project's history got through a green test suite: a refresh control drawn
 as a tofu box, changed lines rendered in the wrong order, a file that silently
 never appeared in the diff. The screenshot is the only step that catches those.
-Use the full `chromium` build, not `chrome-headless-shell` - `shot.mjs` already
+Use the full `chromium` build, not `chrome-headless-shell` - `shot.ts` already
 does, because the shell renders some glyphs differently from a real browser.
 
 ## Running a second instance
@@ -287,8 +299,9 @@ YAML
 $ DIFFWEB_CONFIG=/tmp/mine.yaml uv run python -m diffweb
 ```
 
-Python changes need a restart (or use `poe diffweb-dev`); templates, CSS and JS
-are picked up on reload.
+Python changes need a restart (or use `poe diffweb-dev`); templates and CSS are
+picked up on reload. TypeScript changes need `poe diffweb-build`, or are rebuilt
+on save under `poe diffweb-dev`.
 
 ## Tests
 
@@ -303,10 +316,16 @@ are picked up on reload.
 - **The suite runs under `pytest -n 6`**, so no test may mutate shared state, and
   timing assertions must be tolerant (assert `\d+s`, not `0s`).
 
-Some tests shell out to `node` with diff2html's *core* bundle, which unlike the
+Some tests shell out to `bun` with diff2html's *core* bundle, which unlike the
 `-ui` bundle needs no DOM, to assert on real rendered HTML without a browser
-(`tests/render_order.cjs`). They skip without `poe fetch-diffweb-assets`, so run
-it or you will think you have more coverage than you do.
+(`tests/render_order.ts`, which imports `web/render-options.ts` directly). They
+skip without `poe fetch-diffweb-assets`, so run it or you will think you have
+more coverage than you do. Likewise the asset-stamping test skips without a
+build, and the remerge tests skip on git older than 2.36.
+
+`bun build` strips types without checking them, so `poe diffweb-typecheck`
+(`tsc --noEmit`, part of `poe diffweb-test`) is the only thing that catches a
+type error.
 
 Call `app.reset_for_tests()` after rewriting the config mid-test; it drops the
 cached config, state and diff cache.
@@ -320,8 +339,9 @@ The established shape, worth following:
 2. Server work in `gitio.py` (argv lists, never a shell string; every
    user-supplied ref through `resolve_ref`, which rejects anything option-like).
 3. Route in `app.py`; the handler degrades rather than 500s.
-4. UI in `templates/` + `static/`, reusing the CSS variables in `app.css` so it
-   works in both themes.
+4. UI in `templates/` + `web/` (+ `static/app.css`), reusing the CSS variables in
+   `app.css` so it works in both themes. A new page gets its own entry point in
+   the `build` script in `package.json`.
 5. Tests, then `poe diffweb-shot`.
 6. Update this README, `ROADMAP.md`, and `../plans/diffweb.md` - the plan's
    *Decisions / gotchas* is where a surprise goes so the next person does not
@@ -331,7 +351,7 @@ The established shape, worth following:
 
 - **diff2html re-orders what git got right.** `matching: "lines"` pairs each
   deletion with an insertion, rendering `-,+,-,+` where git emitted `-,-,+,+`.
-  Fixed in `render-options.js`; do not "restore" it for word-level highlighting,
+  Fixed in `render-options.ts`; do not "restore" it for word-level highlighting,
   which survives `matching: "none"` anyway.
 - **The dark theme is hand-written overrides against diff2html's internal class
   names** (`app.css`). They are coupled to the vendored version - re-check them
@@ -390,4 +410,5 @@ somebody.
 and a decision log of the surprises. Read the gotchas there before starting.
 
 [diff2html]: https://diff2html.xyz/
+[bun]: https://bun.sh/
 [difftastic]: https://difftastic.wilfred.me.uk/

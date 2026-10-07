@@ -35,6 +35,7 @@ See `diffweb/README.md` for how to run it and `diffweb/ROADMAP.md` for ideas.
 - [x] Profile the diff-to-HTML path — server stage timings plus client fetch/render posted back, appended to a JSONL log and shown at `/profiles` (`diffweb/profiling.py`, `diffweb/app.py:178`) — 110 tests pass; `/profiles` screenshotted in both colour schemes on :8766
 - [x] Merge commits show their remerge diff by default, with a *true diff* tick for the first-parent diff (`diffweb/gitio.py` `remerge_*`, `diffweb/app.py:_is_single_merge`) — tests written first against a hand-resolved conflict; 140 pass; both readings screenshotted in both themes on :8799
 - [x] The non-test diff — a *hide tests* tick (and `t`) that leaves out files matching `tests.paths`, with the summary saying what was hidden (`diffweb/gitio.py` `test_pathspecs`, `diffweb/app.py` `api_diff`) — 8 new tests; ticked, URL-restored and toggled by key in a real browser in both themes on :8771
+- [x] Page scripts in TypeScript, bundled by bun (`diffweb/web/`, `diffweb/package.json`) — `tsc --noEmit` strict and clean, 168 pass (6 remerge tests skip on git 2.34); every keyboard shortcut, review tick, scope button, catalog sort and the lazy per-file path driven in a real browser on :8766; then, on a throwaway repo, PR refresh with a hostile title from a fake `gh` (no markup injected), PNG and SVG panes, rename/untracked/generated tags, live reload rebadging a reviewed file with scroll kept, base change, commit picker, merge *true diff*, structural, and settings restored from storage and URL
 - [ ] Open-in-editor links — deliberately deferred, see ROADMAP
 - [ ] code-server + GitLens comparison — never spiked, nothing was running on this VM
 
@@ -49,10 +50,19 @@ See `diffweb/README.md` for how to run it and `diffweb/ROADMAP.md` for ideas.
   `display: none` gives it no viewport position. That is the behaviour we want,
   but a browser check that waits for every image to be `complete` hangs on it;
   wait only for the visible ones.
-- **This VM's git is 2.34, which predates `--remerge-diff` (2.36).** The five
-  remerge tests fail here on a clean checkout, with an empty diff rather than an
-  error, because `_try_git` swallows the unknown-option failure. Unrelated to
-  whatever you are working on if that is all that is red.
+- **This VM's git is 2.34, which predates `--remerge-diff` (2.36).** The remerge
+  tests now skip below 2.36 (`needs_remerge`). The app itself still shows an
+  empty diff rather than an error there, because `_try_git` swallows the
+  unknown-option failure.
+- **The page scripts are TypeScript with a build step.** `web/*.ts` is bundled
+  by `bun build` (one IIFE per page, so nothing leaks onto `window`) into the
+  gitignored `static/dist/`; every poe task that serves or tests builds first.
+  `bun build` does not type-check, so `tsc --noEmit` runs in `poe diffweb-test`.
+  diff2html stays vendored and loaded as a global: the npm package is a dev
+  dependency only for its types, pinned to the vendored version.
+- **Playwright's chromium needs `libnss3` and `libnspr4`** on this VM and
+  nothing else; `ldd .../chrome | grep 'not found'` says so in a second, where
+  `playwright install --with-deps` wants sudo for a long apt list.
 
 - **The index is a third end of a range, not a start.** `end=INDEX` becomes
   `git diff --cached <start>`, so it needs its own sentinel beside `WORKTREE`
@@ -205,7 +215,7 @@ See `diffweb/README.md` for how to run it and `diffweb/ROADMAP.md` for ideas.
 
 ## Verify
 
-`uv sync && poe fetch-diffweb-assets && poe diffweb`, then `uv run pytest tests/test_diffweb.py`.
+`uv sync && poe fetch-diffweb-assets && poe diffweb`, then `poe diffweb-test`.
 
 **Before handing back, screenshot the page that is actually running and look at
 it.** Not a fresh instance, not the tests - the server the user will open. Use

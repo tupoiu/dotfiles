@@ -15,7 +15,14 @@ function diffweb --description 'Start the local git worktree diff viewer and pri
         return 0
     end
 
-    uv run python -m diffweb >/tmp/diffweb.log 2>&1 &
+    # The page scripts are built from TypeScript; build first so the page is current.
+    bun run --cwd diffweb build >/tmp/diffweb.log 2>&1
+    or begin
+        cd $here
+        echo "diffweb: building the page scripts failed (log: /tmp/diffweb.log)"
+        return 1
+    end
+    uv run python -m diffweb >>/tmp/diffweb.log 2>&1 &
     disown
     cd $here
 

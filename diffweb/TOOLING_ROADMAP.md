@@ -22,6 +22,22 @@ Format - one entry per session, newest first:
 
 ---
 
+## 2026-10-07 - page scripts from JavaScript to TypeScript (bun)
+- `poe diffweb-shot` - helped, once it ran. Chromium would not start: two
+  libraries (`libnss3`, `libnspr4`) were missing, and the script said only
+  "could not launch". `ldd` on the binary named them at once. It also took the
+  value of `--out` for a page path, because both start with `/`, and so
+  screenshotted a 404 - fixed. It runs under bun now, unchanged otherwise.
+- `poe diffweb-test` - helped. The six remerge tests that fail on git 2.34 now
+  skip with a reason, so a red run here means something.
+- No tool drove the page's *behaviour*: shot only takes pictures. I wrote a
+  throwaway playwright script to press every shortcut, tick reviews, click the
+  scopes and sort the catalog. Two of its "failures" were its own state (focus
+  left on a checkbox; a review tick left in the state DB by the previous run).
+- **Improve:** `shot.ts` could print the `ldd` "not found" lines when the launch
+  fails. A checked-in `interact.ts` (fresh state DB, `localStorage.clear()`,
+  blur before each key) would make the behaviour check one command.
+
 ## 2026-10-06 - the non-test diff (*hide tests*)
 - `poe diffweb-test` - helped, 6s. The same five `remerge` tests still fail
   because this machine's git is 2.34 and `--remerge-diff` arrived in 2.36. I

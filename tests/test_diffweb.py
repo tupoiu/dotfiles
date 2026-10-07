@@ -494,6 +494,15 @@ def test_explicit_commit_range(client: TestClient, config: DiffwebConfig, world:
 # --- merge commits ---------------------------------------------------------
 
 
+def _git_version() -> tuple[int, ...]:
+    out = subprocess.run(["git", "--version"], capture_output=True, text=True).stdout
+    return tuple(int(n) for n in re.findall(r"\d+", out)[:2])
+
+
+# `git show --remerge-diff` arrived in git 2.36; older git rejects the flag.
+needs_remerge = pytest.mark.skipif(_git_version() < (2, 36), reason="needs git >= 2.36 for --remerge-diff")
+
+
 @pytest.fixture
 def merged(world: dict[str, Path]) -> dict[str, Path]:
     """`feature` with a hand-resolved merge of `side` on top.
@@ -531,6 +540,7 @@ def test_parents_of_a_merge_and_of_a_plain_commit(merged: dict[str, Path]) -> No
     assert gitio.is_merge_commit(repo, head) and not gitio.is_merge_commit(repo, first)
 
 
+@needs_remerge
 def test_remerge_diff_shows_only_the_resolution(merged: dict[str, Path]) -> None:
     """A merge commit's true diff is mostly the other branch; what a human wrote
     is the conflict resolution, and that is what --remerge-diff isolates."""
@@ -551,6 +561,7 @@ def test_first_parent_diff_of_a_merge_shows_everything(merged: dict[str, Path]) 
     assert paths == {"a.txt", "s.txt"}
 
 
+@needs_remerge
 def test_remerge_diff_limited_to_files(merged: dict[str, Path]) -> None:
     repo = str(merged["repo"])
     head = gitio.resolve_ref(repo, "HEAD")
@@ -558,6 +569,7 @@ def test_remerge_diff_limited_to_files(merged: dict[str, Path]) -> None:
     assert "a.txt" in gitio.remerge_diff_text(repo, head, files=["a.txt"])
 
 
+@needs_remerge
 def test_remerge_blob_shas_are_the_resolved_blobs(merged: dict[str, Path]) -> None:
     repo = str(merged["repo"])
     head = gitio.resolve_ref(repo, "HEAD")
@@ -567,6 +579,7 @@ def test_remerge_blob_shas_are_the_resolved_blobs(merged: dict[str, Path]) -> No
     assert resolved.startswith(shas["a.txt"])
 
 
+@needs_remerge
 def test_api_single_merge_commit_defaults_to_remerge(
     merged: dict[str, Path], client: TestClient, config: DiffwebConfig
 ) -> None:
@@ -589,6 +602,7 @@ def test_api_merge_commit_true_diff_on_request(
     assert "<<<<<<<" not in data["diff"]
 
 
+@needs_remerge
 def test_api_remerge_only_applies_to_a_single_merge_commit(
     merged: dict[str, Path], client: TestClient, config: DiffwebConfig
 ) -> None:
@@ -1018,8 +1032,9 @@ def test_pr_links_can_be_disabled(client: TestClient, config: DiffwebConfig, tmp
 
 def test_worktree_page_wires_up_keyboard_nav(client: TestClient, config: DiffwebConfig) -> None:
     # The behaviour itself is browser-tested; this catches the wiring regressing.
+    # keys.ts is bundled into worktree.js, so the page carries one script of ours.
     body = client.get(f"/w/{wt_id(config, 'proj')}").text
-    assert "/static/keys.js" in body
+    assert "/static/dist/worktree.js" in body
     assert 'id="key-help-btn"' in body
 
 
@@ -1072,6 +1087,7 @@ def test_excluding_tests_filters_every_view_of_the_range(with_tests: dict[str, P
     assert "+TWO" in gitio.diff_text(repo, mb, WORKTREE, ["a.txt"], spec)
 
 
+@needs_remerge
 def test_excluding_tests_applies_to_a_remerge_diff(merged: dict[str, Path]) -> None:
     repo = str(merged["repo"])
     head = gitio.resolve_ref(repo, "HEAD")
@@ -1205,11 +1221,11 @@ def test_stale_check_reports_a_growing_age(
 
 # --- how changed lines are grouped ----------------------------------------
 
-NODE = shutil.which("node")
+BUN = shutil.which("bun")
 D2H_CORE = Path(__file__).parent.parent / "diffweb" / "static" / "vendor" / "diff2html.min.js"
-needs_node = pytest.mark.skipif(
-    not NODE or not D2H_CORE.exists(),
-    reason="needs node and the vendored diff2html core (poe fetch-diffweb-assets)",
+needs_bun = pytest.mark.skipif(
+    not BUN or not D2H_CORE.exists(),
+    reason="needs bun and the vendored diff2html core (poe fetch-diffweb-assets)",
 )
 
 TWO_FOR_TWO = "\n".join([
@@ -1226,25 +1242,24 @@ TWO_FOR_TWO = "\n".join([
 ])
 
 
-def render_order(diff: str, side_by_side: bool = False) -> str:
+def render_order(diff: str, *flags: str) -> str:
     """One character per rendered row: - deletion, + insertion, . context."""
-    argv = [NODE, str(Path(__file__).parent / "render_order.cjs")]
-    if side_by_side:
-        argv.append("--side-by-side")
+    argv = [BUN, str(Path(__file__).parent / "render_order.ts"), *flags]
     proc = subprocess.run(argv, input=diff, capture_output=True, text=True)
     assert proc.returncode == 0, proc.stderr
     return proc.stdout
 
 
-@needs_node
+@needs_bun
 @pytest.mark.parametrize("side_by_side", [False, True])
 def test_deletions_are_grouped_before_insertions(side_by_side: bool) -> None:
     """Git emits -,-,+,+; the page must not interleave them back to -,+,-,+."""
-    order = render_order(TWO_FOR_TWO, side_by_side).replace(".", "")
+    flags = ["--side-by-side"] if side_by_side else []
+    order = render_order(TWO_FOR_TWO, *flags).replace(".", "")
     assert order == "--++", f"expected a block of deletions then insertions, got {order!r}"
 
 
-@needs_node
+@needs_bun
 def test_grouping_survives_a_longer_run() -> None:
     diff = "\n".join([
         "diff --git a/f.txt b/f.txt",
@@ -1259,23 +1274,11 @@ def test_grouping_survives_a_longer_run() -> None:
     assert render_order(diff).replace(".", "") == "---+++"
 
 
-@needs_node
+@needs_bun
 def test_word_level_highlighting_is_not_lost_by_the_grouping() -> None:
     """Grouping must not cost the inline word diffs - they are the reason the
     interleaving option was there in the first place."""
-    argv = [NODE, "-e", (
-        "const p=require('path'),S=p.join(process.cwd(),'diffweb','static');"
-        "const {html}=require(p.join(S,'vendor','diff2html.min.js'));"
-        "const {diffwebRenderOptions}=require(p.join(S,'render-options.js'));"
-        "const d=require('fs').readFileSync(0,'utf8');"
-        "process.stdout.write(String((html(d,diffwebRenderOptions()).match(/<(ins|del)>/g)||[]).length));"
-    )]
-    proc = subprocess.run(
-        argv, input=TWO_FOR_TWO, capture_output=True, text=True,
-        cwd=Path(__file__).parent.parent,
-    )
-    assert proc.returncode == 0, proc.stderr
-    assert int(proc.stdout) >= 4
+    assert int(render_order(TWO_FOR_TWO, "--count-inline")) >= 4
 
 
 # --- the diff icon --------------------------------------------------------
@@ -1298,14 +1301,16 @@ def test_pages_carry_the_icon(client: TestClient, config: DiffwebConfig, page: s
     assert 'class="mark" src="/static/favicon.svg?v=' in body
 
 
+BUNDLE = Path(__file__).parent.parent / "diffweb" / "static" / "dist" / "worktree.js"
+
+
+@pytest.mark.skipif(not BUNDLE.exists(), reason="needs the built page scripts (poe diffweb-build)")
 def test_static_urls_are_stamped_with_the_file_mtime(client: TestClient, config: DiffwebConfig) -> None:
     """A stale cached worktree.js silently disables anything new in the UI."""
-    from diffweb import app as app_module
-
     body = client.get(f"/w/{wt_id(config, 'proj')}").text
-    js = app_module.HERE / "static" / "worktree.js"
-    assert f'src="/static/worktree.js?v={int(js.stat().st_mtime)}"' in body
-    assert client.get(f"/static/worktree.js?v={int(js.stat().st_mtime)}").status_code == 200
+    stamp = int(BUNDLE.stat().st_mtime)
+    assert f'src="/static/dist/worktree.js?v={stamp}"' in body
+    assert client.get(f"/static/dist/worktree.js?v={stamp}").status_code == 200
 
 
 def test_favicon_ico_is_answered_not_404(client: TestClient) -> None:
@@ -1356,7 +1361,7 @@ def test_shot_command_exists_and_is_documented() -> None:
     """The screenshot step is a required part of handing work back, so the
     command it names must actually be there."""
     root = Path(__file__).parent.parent
-    assert (root / "diffweb" / "shot.mjs").exists()
+    assert (root / "diffweb" / "shot.ts").exists()
     assert "diffweb-shot" in (root / "pyproject.toml").read_text()
     readme = (root / "diffweb" / "README.md").read_text()
     for command in ("poe diffweb-test", "poe diffweb-shot", "poe fetch-diffweb-assets"):
@@ -1364,7 +1369,7 @@ def test_shot_command_exists_and_is_documented() -> None:
     # Feedback on the tooling has somewhere to go, and the docs point at it.
     assert (root / "diffweb" / "TOOLING_ROADMAP.md").exists()
     assert "TOOLING_ROADMAP.md" in readme
-    assert "TOOLING_ROADMAP.md" in (root / "diffweb" / "shot.mjs").read_text()
+    assert "TOOLING_ROADMAP.md" in (root / "diffweb" / "shot.ts").read_text()
 
 
 def test_state_survives_concurrent_access(tmp_path: Path) -> None:
@@ -1535,7 +1540,7 @@ REMERGE_PATCH = "\n".join([
 ])
 
 
-@needs_node
+@needs_bun
 def test_remerge_patch_renders_despite_the_conflict_header_line() -> None:
     """git puts a `remerge CONFLICT` line in the extended header, which diff2html
     has never heard of. It must be skipped, not mistaken for the patch."""
