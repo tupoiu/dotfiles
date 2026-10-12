@@ -1,0 +1,246 @@
+# diffweb — plan
+
+**Goal:** review my own in-progress work across all worktrees of the `~/code`
+monorepo from one browser page, including uncommitted edits. Observable when the
+catalog at `127.0.0.1:8765` lists every worktree with its churn, and clicking one
+shows a diff2html diff against the merge base with a working start/end commit picker.
+
+Living document: tick steps as they land, add gotchas as they bite.
+See `diffweb/README.md` for how to run it and `diffweb/ROADMAP.md` for ideas.
+
+## Steps
+
+- [x] Spike the alternatives before building — Forgejo verdict recorded in `diffweb/README.md`
+- [x] YAML → pydantic config, all paths derived from it (`diffweb/config.py`) — defaults, override and malformed-file tests pass
+- [x] Worktree discovery: config globs ∪ `git worktree list` (`diffweb/gitio.py:95`) — finds all three real worktrees, and the temp world's linked worktree in tests
+- [x] Base ref auto-detect + per-worktree UI override (`diffweb/gitio.py:136`) — resolves `origin/master`; changing it in the UI moves the merge base
+- [x] Catalog table at `/` — sortable, one row per worktree, 40ms warm
+- [x] Diff page: diff2html render, start/end commit picker, range in the URL — file counts match `git diff --stat` by hand
+- [x] Lazy per-file loading over the size limits (`diffweb/app.py:168`) — `test_diff_endpoint_lazy_when_over_limit`
+- [x] Structural diff toggle behind `features.structural` (`diffweb/gitio.py:225`) — difftastic's verdict spliced into git's patch, drawn by diff2html; returns install guidance, not an error, when `difft` is absent
+- [x] Images in diffs: before/after panes fed by `/api/w/<id>/blob`, lazy-loaded (`diffweb/app.py` `api_blob`, `worktree.js` `addImagePane`) — `test_blob_serves_each_end_of_a_range`, `test_blob_refuses_what_it_should`; screenshots of changed, added, deleted, renamed and SVG files in both themes and side-by-side
+- [x] Reviewed state in SQLite, keyed on blob sha — tick survives reload, file rebadges "changed" when the blob moves
+- [x] Live reload over SSE (`diffweb/app.py:209`) — editing a tracked file updates the open page within ~2s, scroll position kept
+- [x] Collapsible file diffs — header/chevron click, collapse-all, state persisted per worktree in `localStorage` (`diffweb/static/worktree.js:26`); survives re-render and reload
+- [x] Isolated tests — 46 pass against a temp git world; suite passes with no `~/code` present
+- [x] `uv sync` is the whole install; `install.sh` untouched
+- [x] Branch context — PR chip via `gh`, behind-base count, dirty marker (`diffweb/forge.py`) — catalog shows a chip for the one branch that has a PR; every gh failure mode degrades to no chip
+- [x] Keyboard navigation and sticky file headers (`diffweb/static/keys.js`) — j/k/o/v/c/s/? all driven in a browser; a header stays pinned below the toolbar while scrolling
+- [x] Noise control — auto-collapse generated files, per-file churn, hide-reviewed (`diffweb/gitio.py:181`) — Cargo.lock and uv.lock start collapsed; reopening one sticks across reloads
+- [x] Merge the three onto `diffweb-integrated` and serve it — 72 tests pass, all three features verified working together on :8765
+- [x] PR chips carry an age — `#4312 18w` when a PR exists, `No PR (🔄 2d)` otherwise, with the 🔄 forcing a re-check — lookups persisted in SQLite so the age survives a restart; 94 tests pass and the refresh control was driven in a browser
+- [x] Changed lines render as blocks, not alternating pairs (`diffweb/static/render-options.js`) — red test first, `-+-+` → `--++` on the real kasli `build.rs`, 98 tests pass
+- [x] Halve the diff stage: one `git diff` per request instead of two (`diffweb/app.py`) — measured 46.7ms → 22.8ms on the kasli worktree, with a test that counts the calls
+- [x] Range shortcuts — one-click *working tree* / *whole branch* / *last commit* / *unpushed* / *staged*, on their own line above base/from/to (`diffweb/templates/worktree.html`) — 113 tests pass and every state was driven in a real browser in both themes
+- [x] Profile the diff-to-HTML path — server stage timings plus client fetch/render posted back, appended to a JSONL log and shown at `/profiles` (`diffweb/profiling.py`, `diffweb/app.py:178`) — 110 tests pass; `/profiles` screenshotted in both colour schemes on :8766
+- [x] Merge commits show their remerge diff by default, with a *true diff* tick for the first-parent diff (`diffweb/gitio.py` `remerge_*`, `diffweb/app.py:_is_single_merge`) — tests written first against a hand-resolved conflict; 140 pass; both readings screenshotted in both themes on :8799
+- [x] The non-test diff — a *hide tests* tick (and `t`) that leaves out files matching `tests.paths`, with the summary saying what was hidden (`diffweb/gitio.py` `test_pathspecs`, `diffweb/app.py` `api_diff`) — 8 new tests; ticked, URL-restored and toggled by key in a real browser in both themes on :8771
+- [x] Page scripts in TypeScript, bundled by bun (`diffweb/web/`, `diffweb/package.json`) — `tsc --noEmit` strict and clean, 168 pass (6 remerge tests skip on git 2.34); every keyboard shortcut, review tick, scope button, catalog sort and the lazy per-file path driven in a real browser on :8766; then, on a throwaway repo, PR refresh with a hostile title from a fake `gh` (no markup injected), PNG and SVG panes, rename/untracked/generated tags, live reload rebadging a reviewed file with scroll kept, base change, commit picker, merge *true diff*, structural, and settings restored from storage and URL
+- [ ] Open-in-editor links — deliberately deferred, see ROADMAP
+- [ ] code-server + GitLens comparison — never spiked, nothing was running on this VM
+
+## Decisions / gotchas
+
+- **Images are fetched per side by `(rev, path)`, not by blob sha.** The
+  worktree end has no sha to fetch by (`--raw` reports zeros and we only
+  `hash-object` it, never write it), and the index is `:path`, so one endpoint
+  taking the same three kinds of range end as everything else was simpler than
+  two. Only a 40-hex `rev` gets an `immutable` cache header; `HEAD` moves.
+- **A `loading="lazy"` image inside a collapsed file never loads**, because
+  `display: none` gives it no viewport position. That is the behaviour we want,
+  but a browser check that waits for every image to be `complete` hangs on it;
+  wait only for the visible ones.
+- **This VM's git is 2.34, which predates `--remerge-diff` (2.36).** The remerge
+  tests now skip below 2.36 (`needs_remerge`). The app itself still shows an
+  empty diff rather than an error there, because `_try_git` swallows the
+  unknown-option failure.
+- **The page scripts are TypeScript with a build step.** `web/*.ts` is bundled
+  by `bun build` (one IIFE per page, so nothing leaks onto `window`) into the
+  gitignored `static/dist/`; every poe task that serves or tests builds first.
+  `bun build` does not type-check, so `tsc --noEmit` runs in `poe diffweb-test`.
+  diff2html stays vendored and loaded as a global: the npm package is a dev
+  dependency only for its types, pinned to the vendored version.
+- **Playwright's chromium needs `libnss3` and `libnspr4`** on this VM and
+  nothing else; `ldd .../chrome | grep 'not found'` says so in a second, where
+  `playwright install --with-deps` wants sudo for a long apt list.
+
+- **The index is a third end of a range, not a start.** `end=INDEX` becomes
+  `git diff --cached <start>`, so it needs its own sentinel beside `WORKTREE`
+  and the same treatment everywhere: `resolve_ref` passes it through, `commits`
+  maps it to HEAD, and `cached_diff` must not memoise it - the index moves under
+  you exactly like the working tree does. `_range` rejects it as a *start*,
+  where it would silently become an empty diff.
+- **A new control that "does nothing" is usually a cached script.** The range
+  shortcuts rendered and were inert in a browser that had `worktree.js` from
+  before they existed. `/static` URLs are now mtime-stamped by `asset()` in
+  `app.py`; a stale page still needs one hard reload to pick the new HTML up.
+- **A branch with no upstream is a normal state, not bad input.** `@{upstream}`
+  is a ref like any other until it isn't: `resolve_ref` raises, and the raw
+  `unknown ref '@{upstream}'` reads as a bug in the page. `_range` turns that
+  one failure into "<branch> has no upstream branch, so nothing is pushed".
+- **`--remerge-diff` is a diff mode, so all the diff plumbing works with it.**
+  `git show --remerge-diff --format= <sha>` accepts `--numstat`, `--raw`, `-M`,
+  `-C` and a `-- <paths>` limiter exactly like `git diff`, so the merge path
+  reuses the same parsers and the same per-file lazy load. On a non-merge it
+  silently degrades to a normal diff, which is why the server decides "is this a
+  single merge commit" itself (`_is_single_merge`: two parents, and the start is
+  the first one) rather than trusting the query. It puts a
+  `remerge CONFLICT (content): ...` line in the extended header, which diff2html
+  ignores correctly; pinned by `test_remerge_patch_renders_despite_the_conflict_header_line`.
+  Remerge and first-parent text share the `_diff_cache` key space only because
+  the mode is part of the key - a bare `(path, start, end)` key would serve the
+  wrong reading. The structural renderer runs `git diff` under difftastic, so
+  remerge is forced off there.
+- **Untracked files were documented as handled but were not.** The `--no-index`
+  trap in the README described a fix that existed nowhere in the code; the
+  catalog's amber "3 uncommitted files" dot came from `git status` while the
+  diff and stats came from `git diff`, so the two disagreed. Now
+  `gitio.untracked_changes` diffs each untracked file against `/dev/null` and
+  the three outputs (numstat, raw, patch) all include them when the range ends
+  at the working tree. One git subprocess per untracked file, memoised on the
+  file's stat.
+- **The staged shortcut starts at the merge base, not at `origin/master`.**
+  Starting at the base ref itself would render other people's commits as
+  reverse-changes, which no other range on the page does.
+
+- **Forgejo can't do the job this tool exists for.** Its compare view is better than
+  ours and came up in a minute, but it only sees *pushed* branches, so uncommitted
+  work — most of what you look at mid-task — is invisible. Revisit only if the goal
+  shifts to reviewing finished branches.
+- **`git worktree list` makes the config globs almost redundant.** Any single
+  discovered repo reveals its siblings, so a bad glob degrades gracefully rather
+  than hiding worktrees.
+- **Two worktrees are both called `code`** (`~/code` and `~/worktrees/code/smart-isle/code`).
+  Colliding basenames fall back to home-relative paths (`diffweb/gitio.py:126`).
+- **`git diff --raw` reports all-zero post-image shas for uncommitted files**, so
+  reviewed-state hashes the file on disk instead (`diffweb/gitio.py:207`).
+- **diff2html ships a light-only stylesheet.** Dark mode is hand-written overrides
+  against its internal class names (`diffweb/static/app.css:92`) — they are coupled
+  to the vendored version, so re-check them when bumping it.
+- **Side-by-side and line-by-line use different content classes** (`.d2h-files-diff`
+  vs `.d2h-file-diff`). Collapsing must hide both; it silently worked in only one
+  mode until a screenshot caught it.
+- **diff2html's built-in `fileContentToggle` was dropped** (`diffweb/static/worktree.js:145`)
+  — its "Viewed" checkbox sat next to ours and forgot itself on every re-render.
+- **The structural view is a unified diff, not difftastic's own rendering.**
+  ansi2html of difft's terminal output gave a dark, uncollapsible `<pre>` with no
+  review ticks; `difft --display json` (behind `DFT_UNSTABLE=yes`) plus the two
+  blobs is enough to synthesise hunks that diff2html draws like any other diff
+  (`diffweb/structural.py`). Unchanged-but-reformatted lines are context in
+  their *after* spelling; a reformat-only file keeps its header and loses its
+  hunks, which diff2html renders as "File without changes".
+- **A configured-but-missing `difft` path surfaced as a git failure**, not as "not
+  installed", until an explicit `os.access` check was added.
+- **Bad refs are user input, not server faults** — one exception handler maps
+  `GitError`/`ValueError` to 400 with a message (`diffweb/app.py:29`); before it, a
+  mistyped base ref produced a silent 500.
+- **The repo is not an installed package**, so pytest needs `pythonpath = ["."]`.
+- **This VM has docker, not podman**, despite `install.sh` installing podman. The 8
+  pre-existing failures in `tests/test_container.py` and `tests/test_playwright_container.py`
+  are that, not diffweb.
+- **Hide tests is filtered by git, not in Python.** `tests.paths` turns into
+  `:(exclude,glob)` pathspecs on every call behind the range: numstat, raw,
+  the patch, `ls-files --others` for untracked files, `show --remerge-diff`
+  and the difft run. Filtering the patch text in Python would mean parsing
+  quoted and renamed paths out of `diff --git` lines, and the counts and the
+  body could disagree. The cost: a rename *into* a test path reads as a
+  deletion, because pathspecs apply before rename detection. The "N test files
+  hidden" figure is one more numstat with the same patterns as positive
+  pathspecs, and only runs while the tick is on. A spec of only exclusions
+  needs no positive path beside it (checked on git 2.34).
+- **`.controls label { display: flex }` beat the `hidden` attribute**, so
+  *true diff* showed on every range, not just on merge commits.
+  `.controls label[hidden]` restores it.
+
+### From the three-worktree round
+
+- **diff2html already had sticky file headers.** They looked broken only because
+  it pins them at `top: 0`, underneath our own sticky toolbar, and its
+  two-class selector outranked a one-class override. Check the vendored CSS for
+  an existing mechanism before building one.
+- **`gh pr list --head master` finds a PR on `~/code`.** A chip can therefore
+  appear on a worktree you think of as "not a branch"; that is honest, not a bug.
+- **The features collide in two places, both invisible until merged.** Keyboard
+  nav walked files that `hide reviewed` had removed from the page, and the focus
+  ring was cleared per-navigable-file so a hidden file kept it forever. Anything
+  that filters the file list and anything that walks it have to agree on what
+  "the files" means.
+- **Naive conflict resolution silently spliced two test bodies together.** The
+  merges were all "both branches appended at the same anchor", so keeping both
+  sides worked for CSS and prose — but for Python it grafted one test's tail onto
+  another and still parsed. The suite caught it; reading the diff would not have.
+- **"No PR" and "gh is broken" are the same observation**, so the chip shows how
+  long ago it last managed to ask rather than implying the answer is current.
+  That pushed the PR cache out of memory and into the state DB.
+- **An inline `onclick="event.stopPropagation()"` silently killed event
+  delegation.** Rows navigate from their own click handler, so the refresh
+  button needed a capture-phase listener; stopping propagation on the button
+  itself meant the delegated handler never ran at all.
+- **A control must not depend on the font having its glyph.** The 🔄 refresh
+  emoji drew a tofu box: this machine has Noto Color Emoji installed, but
+  `fc-match` on U+1F504 resolves to WenQuanYi Zen Hei, which has no coverage,
+  and naming an emoji font stack in CSS did not rescue it. Replaced with an
+  inline SVG. Only looking at a screenshot caught this - every test passed.
+- **diff2html re-orders what git already got right.** Its `matching: "lines"`
+  pairs each deletion with an insertion, so a hunk git emitted as `-,-,+,+`
+  renders `-,+,-,+`. `matching: "none"` restores the blocks and, contrary to
+  what the option name suggests, keeps the inline word-level highlighting.
+- **The core diff2html bundle runs under node**, unlike the `-ui` one, which
+  needs a DOM. That makes rendering assertions cheap: feed it a diff, count the
+  row classes, no browser. Worth reaching for before writing a browser test.
+- **`git diff` ran twice per request.** `diff_size_bytes` shelled out for the
+  whole diff purely to measure its length, then the response fetched the
+  identical diff again. Its comment claimed this avoided holding the diff in
+  memory, which was never true - `capture_output=True` buffers all of stdout.
+  Fetch once, measure the string, drop it if the page will load lazily.
+- **A once-in-twenty flaky test was a real concurrency bug.** `State` shares one
+  sqlite connection between the eight-thread PR pool and background refreshes,
+  but only writes took the lock. Unguarded concurrent reads surface as
+  `InterfaceError: bad parameter or other API misuse` - rare enough to look like
+  noise, and a 500 on the catalog when it hits. Every method now locks.
+- **The tool now finds its own worktrees**, because `~/worktrees/*/*` matches
+  `~/worktrees/dotfiles/*`. Unplanned, and the best dogfooding available.
+
+- **The server's half of the wait is not the interesting half.** On the 9-file
+  kasli branch the whole journey is ~230ms: ~120ms server (of which `git diff`
+  ~50ms, blob shas ~38ms, numstat ~22ms — JSON serialisation is 0.1ms and not
+  worth optimising), and ~95ms of diff2html rendering in the browser. Any future
+  speed work belongs in the three git calls and in the renderer, not in Python.
+- **A profile only exists once the page reports back**, so the server parks its
+  half in a bounded in-memory dict keyed by an id it returns in the diff body.
+  A page closed mid-load simply never posts and the entry ages out.
+- **Timing serialisation means owning it**: the endpoint json.dumps the payload
+  itself and returns a `Response`, because anything FastAPI encodes after the
+  handler returns is invisible to a handler-scoped timer.
+
+- **HUD: one GraphQL request, not one `gh pr list` per repo per section.**
+  Three aliased `search` fields come back in ~1.3s whatever the repo count.
+  The details (`nodes(ids:)`) take ~2.5s for 20 PRs, which is why they load
+  after the first paint.
+- **HUD: "ready for" is in the first query, not the lazy one.** The design said
+  it was a lazy detail, but the review list is ordered by it, and rows that
+  re-order after the page paints are worse than a slightly heavier first query.
+- **HUD: `user-review-requested:@me`, not `review-requested:@me`.** The latter
+  includes every team request, and CODEOWNERS makes those on nearly every PR.
+- **HUD: a re-requested reviewer needs no timeline digging.** GitHub puts them
+  back in `reviewRequests`, so the current list already means "requested and
+  has not reviewed since".
+- **HUD: `last activity` is the max timestamp, not the last timeline item.**
+  Timeline order and timestamp order disagree for rebased commits.
+- **A page script with no import or export shares tsc's global scope with the
+  others.** `hud.ts` declared `table` and broke against `catalog.ts`'s
+  `const table`; `export {}` makes it a module. Bun's IIFE bundles never
+  clashed - only the type check did.
+
+## Verify
+
+`uv sync && poe fetch-diffweb-assets && poe diffweb`, then `poe diffweb-test`.
+
+**Before handing back, screenshot the page that is actually running and look at
+it.** Not a fresh instance, not the tests - the server the user will open. Use
+the full `chromium` build, not `chrome-headless-shell`, which renders some
+glyphs differently from a real browser.
+
+Feature branches live on `diffweb-pr-links`, `diffweb-review-ergo` and
+`diffweb-noise-control`; `diffweb-integrated` is all three merged and is what
+runs on :8765.

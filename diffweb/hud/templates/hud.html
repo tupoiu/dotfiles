@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}HUD &middot; diffweb{% endblock %}
+{% block toolbar %}
+<div class="hud-status">
+  <span class="status" id="hud-checked">loading&hellip;</span>
+  <button type="button" class="pr-refresh" id="hud-refresh" aria-label="Ask GitHub again"
+          title="Ask GitHub again"><svg viewBox="0 0 24 24" width="13" height="13" fill="none"
+      stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+      aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg></button>
+</div>
+{% endblock %}
+{% block content %}
+{% if not hud.repos %}
+<p class="empty">No repos to look at. Add <code>hud.repos: [owner/name, &hellip;]</code> to your diffweb.yaml.</p>
+{% else %}
+<script id="hud-repos" type="application/json">{{ hud.repos | tojson }}</script>
+<p class="hud-error" id="hud-error" hidden></p>
+<section class="hud-section">
+  <h2>My open PRs <span class="hud-count" id="count-mine"></span></h2>
+  <div id="section-mine"></div>
+</section>
+<section class="hud-section">
+  <h2>Closed or merged since <span id="hud-cutoff"></span> <span class="hud-count" id="count-closed"></span></h2>
+  <div id="section-closed"></div>
+</section>
+<section class="hud-section">
+  <h2>Waiting for my review <span class="hud-count" id="count-review"></span></h2>
+  <div id="section-review"></div>
+  <h3 class="hud-sub">Drafts</h3>
+  <div id="section-review-drafts"></div>
+</section>
+<p class="summary dim">Repos: {% for r in hud.repos %}<code>{{ r }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</p>
+{% endif %}
+{% endblock %}
+{% block scripts %}{% if hud.repos %}<script src="{{ asset('dist/hud/hud.js') }}"></script>{% endif %}{% endblock %}

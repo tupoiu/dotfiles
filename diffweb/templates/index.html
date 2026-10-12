@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block toolbar %}
+{% if features.profiling %}<a class="topbar-link" href="/profiles">profiles</a>{% endif %}
+{% endblock %}
+{% block content %}
+<table class="catalog" id="catalog">
+  <thead>
+    <tr>
+      <th data-sort="name">worktree</th>
+      <th data-sort="branch">branch</th>
+      <th data-sort="pr">pr</th>
+      <th data-sort="base">base</th>
+      <th data-sort="ahead" class="num">ahead</th>
+      <th data-sort="files" class="num">files</th>
+      <th data-sort="churn" class="num">+/&minus;</th>
+      <th data-sort="reviewed" class="num">reviewed</th>
+      <th data-sort="last">last commit</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for s in summaries %}
+    <tr onclick="location.href='/w/{{ s.worktree.id }}'"
+        data-name="{{ s.worktree.name }}" data-branch="{{ s.worktree.branch }}"
+        data-base="{{ s.base }}" data-ahead="{{ s.ahead }}" data-files="{{ s.files }}"
+        data-pr="{{ s.pr.pr.number if s.pr and s.pr.pr else 0 }}"
+        data-churn="{{ s.added + s.removed }}" data-reviewed="{{ s.reviewed }}"
+        data-last="{{ s.last_commit }}">
+      <td class="name"><a href="/w/{{ s.worktree.id }}">{{ s.worktree.name }}</a>
+          <span class="path">{{ s.worktree.path }}</span></td>
+      <td class="branch">{{ s.worktree.branch }}
+        {%- if s.dirty %}<span class="dirty" title="{{ s.dirty }} uncommitted files">●</span>{% endif %}</td>
+      <td class="pr" data-wt="{{ s.worktree.id }}">
+        {%- if not s.pr -%}
+          <span class="dim">&mdash;</span>
+        {%- elif s.pr.pr -%}
+          <a href="{{ s.pr.pr.url }}" target="_blank" rel="noopener"
+             class="pr-chip pr-{{ s.pr.pr.status }}" title="{{ s.pr.pr.title }}"
+             onclick="event.stopPropagation()">{{ s.pr.pr.label }}</a>
+          {%- if s.pr.pr.opened_age %}<span class="pr-age"
+             title="opened {{ s.pr.pr.opened_age }} ago">{{ s.pr.pr.opened_age }}</span>{% endif -%}
+        {%- else -%}
+          <span class="pr-chip pr-none">No PR
+            (<button type="button" class="pr-refresh" aria-label="Check for a PR again"
+                     title="Checked {{ s.pr.checked_age }} ago. Check again."><svg
+                viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor"
+                stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+                aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg></button>
+            <span class="pr-checked">{{ s.pr.checked_age }}</span>)</span>
+        {%- endif -%}
+      </td>
+      <td class="dim">{{ s.base }}</td>
+      {% if s.error %}
+        <td class="err" colspan="5">{{ s.error }}</td>
+      {% else %}
+        <td class="num">{{ s.ahead }}{% if s.behind %}<span class="behind" title="{{ s.behind }} commits behind {{ s.base }}">&darr;{{ s.behind }}</span>{% endif %}</td>
+        <td class="num">{{ s.files }}</td>
+        <td class="num churn"><span class="add">+{{ s.added }}</span> <span class="del">&minus;{{ s.removed }}</span></td>
+        <td class="num dim">{{ s.reviewed or "&mdash;" | safe }}</td>
+        <td class="dim">{{ s.last_commit }}</td>
+      {% endif %}
+    </tr>
+  {% else %}
+    <tr><td colspan="9" class="empty">No worktrees found. Check <code>roots</code> in your diffweb.yaml.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
+{% block scripts %}<script src="{{ asset('dist/catalog.js') }}"></script>{% endblock %}

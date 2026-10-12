@@ -1,0 +1,232 @@
+# Tooling roadmap
+
+Feedback on the tools you use to work on diffweb - `poe diffweb-test`,
+`poe diffweb`, `poe diffweb-shot`, `poe fetch-diffweb-assets`, the fixtures,
+the node render harness.
+
+**If you used them, add an entry before you hand work back.** Say plainly
+whether each tool helped, and what would have helped more. A tool nobody
+complains about is either perfect or unused, and the second is far more likely.
+Negative entries are the valuable ones; "worked fine" is worth writing only when
+the tool did something specific for you.
+
+This is about the *tools*, not the app. Product ideas go in `ROADMAP.md`.
+
+Format - one entry per session, newest first:
+
+```markdown
+## YYYY-MM-DD - what you were doing
+- `tool` - helped / did not help. What happened, concretely.
+- **Improve:** the change that would have saved you the time.
+```
+
+---
+
+## 2026-10-07 - the HUD (`/hud`)
+
+- `gh api graphql` by hand, before writing any code - helped most. Probing
+  the two queries against live data settled the design: three aliased searches
+  in one request (~1.3s), details by node id (~2.5s for 20 PRs, so they are
+  worth lazy loading), and the fact that re-requested reviewers already sit in
+  `reviewRequests`. Pass the body with `--input`; zsh globs `-f ids[]=...`.
+- `poe diffweb-test` - helped; a fake `gh` written as a Python script that
+  routes on the query text made the GraphQL layer as testable as `gh pr list`.
+- `poe diffweb-typecheck` - caught a clash that the bundle never shows: page
+  scripts without an import/export share one global scope under `tsc`.
+- `poe diffweb-shot` - helped; read the PNGs and the columns of each per-repo
+  table did not line up, which no test would catch. But a catalog over ~30 real
+  worktrees takes longer than its page timeout, so a run of `/hud /` dies
+  half-way. **Improve:** a `--timeout` flag, or shoot only the paths given.
+- A second instance for real data - a `pkill -f "python -m diffweb"` to restart
+  it also matched the shell that ran it. **Improve:** keep the PID (`$!`) and
+  kill that; never kill by pattern while `poe diffweb-dev` may be running.
+
+## 2026-10-07 - page scripts from JavaScript to TypeScript (bun)
+- `poe diffweb-shot` - helped, once it ran. Chromium would not start: two
+  libraries (`libnss3`, `libnspr4`) were missing, and the script said only
+  "could not launch". `ldd` on the binary named them at once. It also took the
+  value of `--out` for a page path, because both start with `/`, and so
+  screenshotted a 404 - fixed. It runs under bun now, unchanged otherwise.
+- `poe diffweb-test` - helped. The six remerge tests that fail on git 2.34 now
+  skip with a reason, so a red run here means something.
+- No tool drove the page's *behaviour*: shot only takes pictures. I wrote a
+  throwaway playwright script to press every shortcut, tick reviews, click the
+  scopes and sort the catalog. Two of its "failures" were its own state (focus
+  left on a checkbox; a review tick left in the state DB by the previous run).
+- **Improve:** `shot.ts` could print the `ldd` "not found" lines when the launch
+  fails. A checked-in `interact.ts` (fresh state DB, `localStorage.clear()`,
+  blur before each key) would make the behaviour check one command.
+
+## 2026-10-06 - the non-test diff (*hide tests*)
+- `poe diffweb-test` - helped, 6s. The same five `remerge` tests still fail
+  because this machine's git is 2.34 and `--remerge-diff` arrived in 2.36. I
+  ran them on a `git archive` of HEAD to prove that, which a skip would have
+  made unnecessary. A test that only asserts "empty" passes trivially on that
+  git, so I had to give the new remerge test a positive check first.
+  **Improve:** skip on `git --version` < 2.36, as the 2026-09-22 entry asked.
+- `poe diffweb-shot` - did not help much. `libnss3`/`libnspr4` were missing
+  again; the `apt-get download` + `dpkg -x` + `LD_LIBRARY_PATH` recipe from the
+  2026-09-16 entry worked first time. Then `--out` was read as a page again (4
+  bogus errors), and the full-page PNGs are 95,000px tall, so they read as a
+  thin stripe. With no PIL or ImageMagick on the box, a viewport shot meant a
+  throwaway Playwright script in `diffweb/`, which also did the checkbox and
+  `t` key checks. **Improve:** a `--viewport` (no `fullPage`) flag, a
+  `--check <css>` flag, and the `--out` fix.
+- Picking the worktree for a second instance - `curl / | grep /w/ | head -1`
+  picked a *different* worktree (a linked one sorts first), and its diff looked
+  so wrong that I suspected the new code. The id is
+  `sha1(path)[:12]`. **Improve:** let `shot.mjs` take a worktree path and
+  work out the id itself.
+
+## 2026-09-16 - images in diffs
+
+- `poe diffweb-test` / `world` fixture - helped. A helper that commits, renames,
+  stages and dirties a png on top of `world` gave every end of a range a picture
+  to fetch, and the suite ran in six seconds. Five remerge tests fail on this
+  machine regardless (git 2.34, no `--remerge-diff`); it took a clean worktree
+  at HEAD to prove that was not me.
+  **Improve:** skip the remerge tests when `git --version` is below 2.36, with
+  the reason in the skip message.
+- `poe diffweb-shot` - helped once it ran, and caught the real bug: in
+  side-by-side the image pane was squeezed into a third column, which no test
+  would ever have seen. Getting it to run cost more than the feature. Chromium
+  needed `libnss3`/`libnspr4`, `sudo` wants a password, so the fix was
+  `apt-get download libnss3 libnspr4`, `dpkg -x` into the scratchpad and
+  `LD_LIBRARY_PATH` - no root needed. Then `--out <dir>` was read as a *page
+  path* because it starts with `/`, producing two bogus 404 "page errors".
+  **Improve:** skip the values of `--out`/`--port` when collecting paths; print
+  the no-sudo library recipe alongside the `--with-deps` one; a `--select`
+  flag and a way to set `localStorage` (side-by-side lives there) would have
+  saved a throwaway Playwright script, which also had to live *inside*
+  `diffweb/` because ESM ignores `NODE_PATH`.
+- `poe diffweb` with a throwaway `DIFFWEB_CONFIG` - helped; same boilerplate
+  complaint as every previous entry. Also: `pkill -f "python -m diffweb"` kills
+  the shell that runs it, because that shell's own command line matches.
+
+## 2026-09-10 - remerge diff for merge commits
+
+- `poe diffweb-test` / the `world` fixture - helped. Building a `merged` fixture
+  on top of `world` (a conflicting side branch, `git merge` asserted to fail,
+  then a hand-written resolution) took a few lines and gave every gitio and API
+  test a real conflict to bite on. Tests were written first and all nine failed
+  for the right reason before any implementation existed.
+- `tests/render_order.cjs` - helped, unexpectedly. It was built for the
+  `-+-+` ordering bug, but "does diff2html swallow git's `remerge CONFLICT`
+  header line?" is the same question shape, and answering it without a browser
+  was one shell pipe. Now pinned as a test.
+- `poe diffweb-shot` - helped; both readings in both themes for free.
+  **Improve:** `--out /abs/path` is parsed as a page to screenshot, because
+  every argv starting with `/` is a path. It produced two 404 "page errors" and
+  a PNG of the 404 page named after my output directory. Consume option values
+  before filtering for paths. Also, it cannot tick a checkbox, so the *true
+  diff* state had to be put in the URL partly so the tool could reach it - a
+  fine outcome, but a `--click <css>` flag would have been the direct route.
+- Running a second instance - same boilerplate as last time (temp YAML,
+  `DIFFWEB_CONFIG`, background `uv run`, poll `/healthz`, compute the worktree
+  id by hand with sha1). `--port`/`--roots` flags and a `--print-ids` are still
+  the improvement. Stopping it afterwards was also fiddly: the `uv run` parent
+  and the python child need killing separately, and the fish/bash `pkill`
+  returned 144 on a pattern that matched itself. Worse: `pkill -f diffweb` also
+  took down the real instance on :8765, which nobody noticed until the user
+  asked. A throwaway instance should write a pidfile next to its config so
+  stopping it is `kill (cat pid)`, never a pattern match.
+
+## 2026-08-28 - range shortcuts (working tree / whole branch / last commit / unpushed / staged)
+
+- `poe diffweb-test` - helped. 2.7s for 109 tests, and it caught a `str`/`Path`
+  slip in my own new test within seconds of writing it. The vendored assets were
+  already present, so the silent-skip problem from the last entry did not bite.
+- `poe diffweb-shot` - helped for "are there console errors", did not help for
+  "does the new toolbar row look right". The whole-page PNG of a diffweb
+  worktree is 1440x86205, which downscales to an unreadable ribbon: the toolbar
+  I had just built was about two pixels of it. I wrote a throwaway Playwright
+  script to shoot `.topbar` in both schemes and in each of the three new states,
+  which is exactly the `--select` flag the previous session asked for.
+  **Improve:** `--select <css>` is now requested twice. Add it. A `--click <css>`
+  (or a repeatable `--step`) would have covered the rest, since what I needed to
+  see was three *states* of one element, not three pages.
+- `poe diffweb-shot -- --out DIR PATH` - actively misled me. `--out` was not
+  consumed as a flag, so the directory was treated as a page path and shot as a
+  404, and the run exited non-zero reporting "4 page errors" that were entirely
+  my own arguments. The real pages in the same run were clean.
+  **Improve:** reject an unknown or mis-parsed flag up front instead of
+  requesting it as a URL, and never report a made-up path as a page error.
+- Ad-hoc Playwright script - the `import { chromium } from 'playwright'` only
+  resolves from inside `diffweb/`, so a script in a scratch directory dies with
+  `ERR_MODULE_NOT_FOUND` and you copy it into the repo to run it.
+  **Improve:** a documented `node --experimental-...`-free way to run a one-off,
+  or just say in the README that scratch scripts belong in `diffweb/`.
+- Running a second instance - the temp-YAML dance again, plus scraping
+  `/w/<id>` out of the catalog HTML and then fetching six pages to find which
+  opaque id was the branch I wanted.
+  **Improve:** the `--port`/`--roots` flags already asked for, and let the page
+  route accept a branch or worktree *name* as well as the hash.
+
+## 2026-08-27 - writing the contributor docs, fixing a State race
+
+- `poe diffweb-test` - helped. ~2s for 106 tests makes it cheap enough to run
+  after every edit, which is how the flaky `State` test got noticed at all.
+  **Improve:** four tests skip silently when `static/vendor/` is empty, so a
+  fresh checkout reports 102 passing and looks complete. The task should either
+  depend on `fetch-diffweb-assets` or print a loud line naming what it skipped.
+- `poe diffweb-shot` - helped, but it is new and this was its first real use.
+  It found the pages clean; the loop it formalises is what previously caught the
+  tofu favicon and the alternating diff lines.
+  **Improve:** it can only shoot whole pages. Investigating the `build.rs` hunk
+  needed a hand-written script to screenshot one `.d2h-file-wrapper`. A
+  `--select <css>` flag would have replaced that script, and a `--worktree
+  <name>` flag would beat scraping the catalog HTML for an id.
+- Playwright setup - the single biggest time sink this session. The VM was
+  reprovisioned, the browser's system libraries went with it, and the failure
+  surfaced as `libnspr4.so: cannot open shared object file` from deep inside a
+  launch trace. Recovery needed `npx playwright install --with-deps chromium`
+  and sudo.
+  **Improve:** `shot.mjs` now prints that command on a launch failure, which is
+  half a fix. A `poe diffweb-doctor` that checks node, playwright, the browser,
+  its libraries and the vendored assets in one go, and prints exactly what to
+  run, would turn a twenty-minute detour into one line.
+- Running a second instance - the temp-YAML-and-`DIFFWEB_CONFIG` dance is
+  copy-paste boilerplate, repeated once per feature worktree all session.
+  **Improve:** let `python -m diffweb` take `--port` and `--roots` overrides so
+  a throwaway instance is one command with no file.
+- `poe fetch-diffweb-assets` - helped, and vendoring means the app runs offline.
+  **Improve:** it re-downloads every time and verifies nothing. Skip when the
+  files are already present at the pinned version, and check a hash - the whole
+  UI is those bundles.
+- Test fixtures (`world`, `config`) - helped. The temp git world made every
+  gitio test honest, and pointing `$DIFFWEB_CONFIG` at `tmp_path` is what keeps
+  the suite off real repos.
+  **Improve:** isolation is per-path and manual, so each new config option that
+  writes somewhere is a fresh chance to leak into `~`. A profile log already did
+  exactly that. The fixture could instead force every path-shaped setting under
+  `tmp_path`, and a session-scoped check could fail the run if anything appeared
+  in the real state dir.
+
+## Structural view through diff2html (2026-09-22)
+
+- `difft --display json` - the enabler. Its `aligned_lines` is exactly the
+  side-by-side layout, so synthesising a unified diff was a hundred lines, not
+  a parser. Probe it with two scratch files before designing around it: the
+  JSON carries no line text, and created/deleted/binary files carry nothing at
+  all, which is what pushed the design to "splice into git's patch".
+- `poe diffweb-test` - helped; the pure `structural.py` tests needed no difft
+  and ran in a second. Five `remerge` tests fail on a pristine checkout of
+  this branch too, so they are environment, not regression - but a failing
+  baseline costs a detour every time. **Improve:** skip them when the local
+  git lacks `--remerge-diff`, or mark them as such.
+- Playwright - `libnspr4.so` missing again after a reprovision, and no sudo.
+  Workaround that took three tries: run the script inside the local
+  `mcr.microsoft.com/playwright:v1.60.0-noble` image with `--network host`,
+  mounting `~/.cache/ms-playwright` at `PLAYWRIGHT_BROWSERS_PATH` (the image's
+  own browser is a different revision from the installed npm package) and
+  `diffweb/node_modules` for the import. **Improve:** `shot.mjs` should fall
+  back to exactly that when the launch fails for a missing library; it also
+  still cannot tick a checkbox before shooting, so a `--check <css>` flag would
+  have replaced the hand-written script.
+- The hosted `poe diffweb-dev` instance - helped as the place to see the real
+  bug (a worktree whose new role was invisible), but `--reload` restarts on
+  every edit to a `.py` file, and mid-restart the reloader holds the port while
+  no worker answers, so a request hangs rather than failing. Two requests hung
+  that way during this session and looked like a bug in the new code.
+  **Improve:** `poe diffweb-dev` could print a line when it restarts, or the
+  screenshot script could fail fast on a connect timeout instead of waiting.

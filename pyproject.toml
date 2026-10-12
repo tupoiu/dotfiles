@@ -10,11 +10,21 @@ dependencies = []
 dev = [
   "pytest",
   "pytest-xdist>=3.8.0",
+  "httpx",  # FastAPI TestClient
+]
+# diffweb: everything it needs is project-scoped, so `uv sync` is the whole install.
+diffweb = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "jinja2>=3.1",
+  "pydantic>=2.7",
+  "pyyaml>=6",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-n 6"
+pythonpath = ["."]  # the repo is not an installed package; diffweb is imported from the tree
 
 [tool.poe.tasks]
 # We use cgroupfs because WSL doesn't work normally with cgroups
@@ -26,3 +36,22 @@ build-playwright = "podman build --cgroup-manager=cgroupfs -t playwright-default
 test-claude = {cmd = "pytest tests/", executor = "uv" }
 # Pointer only. Poe runs tasks without a terminal, which breaks the test subshell.
 fish-alias = { cmd = "echo 'fish-alias is a fish function: run fish-alias from fish.'", help = "Add/list/show/rm fish aliases: run the fish-alias function from fish, not poe" }
+
+# diffweb - local web UI for reviewing diffs across git worktrees. See diffweb/README.md
+# The page scripts are TypeScript (diffweb/web/), bundled by bun into the
+# gitignored diffweb/static/dist/, so every task that serves or tests builds first.
+diffweb = {sequence = ["diffweb-build", "_diffweb-serve"]}
+diffweb-dev = {sequence = ["diffweb-build", "_diffweb-dev"]}
+fetch-diffweb-assets = "bash diffweb/fetch-assets.sh"
+diffweb-build = "bun run --cwd diffweb build"
+diffweb-typecheck = "bun run --cwd diffweb typecheck"
+diffweb-test = {sequence = ["diffweb-build", "diffweb-typecheck", "_diffweb-pytest"]}
+diffweb-shot = "bun diffweb/shot.ts"
+_diffweb-serve = {cmd = "python -m diffweb", executor = "uv" }
+_diffweb-dev = {parallel = ["_diffweb-watch", "_diffweb-serve-reload"]}
+_diffweb-watch = "bun run --cwd diffweb watch"
+_diffweb-serve-reload = {cmd = "python -m diffweb --reload", executor = "uv" }
+_diffweb-pytest = {cmd = "pytest tests/test_diffweb.py tests/test_diffweb_hud.py -q", executor = "uv" }
+
+[tool.uv]
+default-groups = ["dev", "diffweb"]

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}diffweb{% endblock %}</title>
+<link rel="icon" type="image/svg+xml" href="{{ asset('favicon.svg') }}">
+<link rel="stylesheet" href="{{ asset('vendor/diff2html.min.css') }}">
+<link rel="stylesheet" href="{{ asset('vendor/highlight-light.min.css') }}" media="(prefers-color-scheme: light)">
+<link rel="stylesheet" href="{{ asset('vendor/highlight-dark.min.css') }}" media="(prefers-color-scheme: dark)">
+<link rel="stylesheet" href="{{ asset('app.css') }}">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/"><img class="mark" src="{{ asset('favicon.svg') }}" alt="" width="14" height="14">diffweb</a>
+  {% if hud_enabled() %}<a class="topnav{% if request.url.path == '/hud' %} current{% endif %}" href="/hud">HUD</a>{% endif %}
+  {% block toolbar %}{% endblock %}
+</header>
+<main>{% block content %}{% endblock %}</main>
+{% block scripts %}{% endblock %}
+</body>
+</html>

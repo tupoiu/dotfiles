@@ -1,0 +1,310 @@
+:root {
+  --accent-soft: #eaf1ff;
+  --bg: #ffffff; --fg: #1b1f24; --dim: #6a737d; --line: #e3e6ea;
+  --accent: #2f6feb; --add: #1a7f37; --del: #cf222e; --panel: #f6f8fa;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --accent-soft: #16233a;
+    --bg: #0e1116; --fg: #d7dde5; --dim: #8b949e; --line: #262c36;
+    --accent: #6ea8ff; --add: #3fb950; --del: #f85149; --panel: #161b22;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 13px/1.5 ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+
+.topbar {
+  position: sticky; top: 0; z-index: 20; display: flex; align-items: center;
+  gap: 16px; flex-wrap: wrap; padding: 8px 16px;
+  background: var(--panel); border-bottom: 1px solid var(--line);
+}
+.brand {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-weight: 650; letter-spacing: .02em; color: var(--fg);
+}
+.brand .mark { display: block; border-radius: 3px; }
+main { padding: 16px; }
+
+.controls { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
+.control-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.controls label { color: var(--dim); display: flex; align-items: center; gap: 5px; }
+.controls .chk { cursor: pointer; }
+/* `display: flex` above beats the hidden attribute, so restore it. */
+.controls label[hidden] { display: none; }
+.wt-name { font-weight: 600; }
+
+/* Range shortcuts: the three ranges worth one click, on their own line. */
+.scopes { gap: 8px; }
+.scopes-label { color: var(--dim); }
+.scope-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  font: inherit; font-size: 12px; line-height: 1.6;
+  padding: 1px 9px; border-radius: 999px; cursor: pointer;
+  color: var(--dim); background: none; border: 1px solid var(--line);
+}
+.scope-btn:hover { color: var(--fg); border-color: var(--dim); }
+.scope-btn[aria-pressed="true"] {
+  color: var(--accent); border-color: currentColor; font-weight: 550;
+}
+.scope-btn svg { display: block; }
+.branch {
+  font-family: ui-monospace, monospace; font-size: 11px; color: var(--dim);
+  border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; margin-left: 6px;
+}
+input, select {
+  background: var(--bg); color: var(--fg); border: 1px solid var(--line);
+  border-radius: 6px; padding: 3px 6px; font: inherit; max-width: 420px;
+}
+.status { color: var(--dim); font-size: 12px; }
+.status.busy::before { content: "\25CF "; color: var(--accent); }
+
+.catalog { width: 100%; border-collapse: collapse; }
+.catalog th {
+  text-align: left; font-weight: 550; color: var(--dim); font-size: 11px;
+  text-transform: uppercase; letter-spacing: .06em; padding: 6px 10px;
+  border-bottom: 1px solid var(--line); cursor: pointer; user-select: none;
+}
+.catalog td { padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: baseline; }
+.catalog tbody tr { cursor: pointer; }
+.catalog tbody tr:hover { background: var(--panel); }
+.catalog .num { text-align: right; font-variant-numeric: tabular-nums; }
+.catalog .name a { font-weight: 550; }
+.catalog .path { display: block; color: var(--dim); font-size: 11px; }
+.catalog .dim { color: var(--dim); }
+.catalog .err { color: var(--del); }
+.catalog .empty { color: var(--dim); text-align: center; padding: 32px; }
+.add { color: var(--add); }
+.del { color: var(--del); }
+
+.summary { color: var(--dim); margin-bottom: 12px; }
+.summary .warn { color: var(--del); }
+.summary .merge-note { color: var(--accent); }
+.summary .merge-note code { font-size: 12px; }
+/* Collapsing and review state, layered on diff2html's own file wrappers.
+   Side-by-side uses .d2h-files-diff, line-by-line uses .d2h-file-diff. */
+.d2h-file-wrapper.collapsed .d2h-file-diff,
+.d2h-file-wrapper.collapsed .d2h-files-diff,
+.d2h-file-wrapper.collapsed .image-diff { display: none; }
+.d2h-file-header { cursor: pointer; }
+.d2h-file-wrapper:has(.review-tick input:checked) .d2h-file-header { opacity: .6; }
+
+.chevron {
+  flex: none; width: 16px; height: 16px; margin-right: 2px; padding: 0;
+  border: 0; background: none; cursor: pointer; color: var(--dim);
+}
+.chevron::before {
+  content: ""; display: block; width: 5px; height: 5px; margin: 4px 0 0 3px;
+  border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg); transition: transform .12s ease;
+}
+.d2h-file-wrapper.collapsed .chevron::before { transform: rotate(-45deg); margin-top: 6px; }
+
+/* Image diffs: both sides of a picture, side by side, on a checkerboard so
+   transparency reads as transparency rather than as the page background. */
+.image-diff {
+  display: flex; flex-wrap: wrap; gap: 16px; padding: 12px 16px;
+  border-top: 1px solid var(--line);
+}
+.image-side { margin: 0; flex: 1 1 280px; min-width: 0; max-width: 100%; }
+.image-side figcaption {
+  font-size: 11px; color: var(--dim); margin-bottom: 6px;
+  padding-left: 8px; border-left: 3px solid var(--line);
+}
+.image-side.del figcaption { border-left-color: var(--del); }
+.image-side.add figcaption { border-left-color: var(--add); }
+.image-side a { display: block; }
+.image-side img {
+  display: block; max-width: 100%; max-height: 480px; object-fit: contain;
+  border: 1px solid var(--line); border-radius: 6px;
+  background-color: var(--panel);
+  background-image:
+    linear-gradient(45deg, var(--line) 25%, transparent 25%, transparent 75%, var(--line) 75%),
+    linear-gradient(45deg, var(--line) 25%, transparent 25%, transparent 75%, var(--line) 75%);
+  background-size: 16px 16px; background-position: 0 0, 8px 8px;
+}
+.image-side.failed img { min-height: 48px; min-width: 96px; }
+
+.review-tick { margin-left: auto; display: flex; align-items: center; gap: 5px;
+               color: var(--dim); font-size: 11px; cursor: pointer; }
+.badge-changed { color: var(--del); font-size: 11px; margin-left: 8px; }
+
+/* diff2html ships a light-only stylesheet, so recolour it for dark mode.
+   Selectors mirror the ones in vendor/diff2html.min.css. */
+@media (prefers-color-scheme: dark) {
+  .d2h-wrapper, .d2h-file-wrapper, .d2h-files-diff, .d2h-file-side-diff,
+  .d2h-code-wrapper, .d2h-diff-table { background: var(--bg); color: var(--fg); }
+  .d2h-file-wrapper, .d2h-file-list-wrapper, .d2h-file-header,
+  .d2h-code-linenumber, .d2h-code-side-linenumber, .d2h-diff-tbody > tr > td {
+    border-color: var(--line);
+  }
+  .d2h-file-header, .d2h-file-list-header, .d2h-file-list-wrapper { background: var(--panel); }
+  .d2h-file-name, .d2h-file-list-title, .d2h-file-list a { color: var(--fg); }
+  .d2h-code-line-ctn, .d2h-code-line, .d2h-code-side-line { color: var(--fg); }
+  .d2h-code-linenumber, .d2h-code-side-linenumber { background: var(--panel); color: var(--dim); }
+
+  .d2h-ins { background: #12261e; border-color: #1d3b2a; }
+  .d2h-ins.d2h-change { background: #14231c; }
+  .d2h-del { background: #2a1618; border-color: #48232a; }
+  .d2h-del.d2h-change { background: #23181a; }
+  .d2h-info { background: var(--panel); color: var(--dim); border-color: var(--line); }
+  .d2h-ins ins, .d2h-ins ins.d2h-change { background: #1f5c3a; color: #d7ffe6; }
+  .d2h-del del, .d2h-del del.d2h-change { background: #6e2b31; color: #ffe3e3; }
+  .d2h-emptyplaceholder, .d2h-cntx { background: var(--bg); border-color: var(--line); }
+  .d2h-code-line del, .d2h-code-side-line del { background: #6e2b31; }
+  .d2h-code-line ins, .d2h-code-side-line ins { background: #1f5c3a; }
+  .d2h-tag { background: var(--panel); }
+  .d2h-changed-tag { border-color: #9e6a03; color: #d29922; }
+  .d2h-added-tag { border-color: #1d3b2a; color: var(--add); }
+  .d2h-deleted-tag { border-color: #48232a; color: var(--del); }
+  .d2h-moved-tag { border-color: var(--line); color: var(--accent); }
+}
+
+/* Our own table must not inherit diff2html's generic table borders. */
+.catalog, .catalog tr, .catalog td, .catalog th { border-left: 0; border-right: 0; }
+
+.linkish {
+  background: none; border: 0; padding: 0; font: inherit;
+  color: var(--accent); cursor: pointer;
+}
+.linkish:hover { text-decoration: underline; }
+
+/* Branch context: PR chips, behind-base and dirty markers. */
+.pr-chip {
+  display: inline-block; font-size: 11px; font-weight: 550; line-height: 1.6;
+  padding: 0 7px; margin-left: 6px; border-radius: 999px;
+  border: 1px solid currentColor;
+}
+.pr-open { color: var(--add); }
+.pr-draft { color: var(--dim); }
+.pr-merged { color: #8957e5; }
+.pr-closed { color: var(--del); }
+.catalog .pr .pr-chip { margin-left: 0; }
+.behind { color: var(--del); font-size: 11px; margin-left: 6px; }
+.dirty { color: #d29922; margin-left: 6px; font-size: 10px; }
+
+/* Review ergonomics: sticky file headers, keyboard focus, help overlay. */
+
+/* diff2html already sticks file headers (its `stickyFileHeaders` option adds
+   .d2h-sticky-header), but pins them at top:0, which puts them under our own
+   sticky toolbar. Reuse its mechanism and just correct the offset - matching
+   its two-class specificity so this wins. */
+.d2h-file-header.d2h-sticky-header {
+  top: var(--topbar-h, 41px);
+  z-index: 5;
+  background: var(--panel);
+}
+
+.d2h-file-wrapper.focused { outline: 2px solid var(--accent); outline-offset: -1px; }
+.d2h-file-wrapper.focused .d2h-file-header { background: var(--accent-soft, var(--panel)); }
+
+#key-help {
+  position: fixed; inset: 0; margin: auto; width: min(420px, 90vw); height: max-content;
+  background: var(--bg); color: var(--fg); border: 1px solid var(--line);
+  border-radius: 10px; padding: 20px 24px; z-index: 100;
+  box-shadow: 0 12px 48px rgb(0 0 0 / .35);
+}
+#key-help h2 { margin: 0 0 12px; font-size: 14px; }
+#key-help dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0; }
+#key-help dt { margin: 0; }
+#key-help dd { margin: 0; color: var(--dim); }
+#key-help kbd {
+  font: 11px/1.6 ui-monospace, monospace; border: 1px solid var(--line);
+  border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: var(--panel);
+}
+#key-help p { margin: 14px 0 0; font-size: 11px; }
+/* Noise control: per-file churn, generated-file badge, hide-reviewed filter. */
+.file-stats {
+  margin-left: 10px; font-size: 11px;
+  font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums;
+}
+.noise-tag, .untracked-tag {
+  margin-left: 8px; font-size: 10px; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--dim); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px;
+}
+body.hide-reviewed .d2h-file-wrapper.is-reviewed { display: none; }
+
+/* PR chip extras: how long ago it was opened, or how long ago we last looked. */
+.pr-age { margin-left: 6px; font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.pr-none { color: var(--dim); border-style: dashed; }
+/* An inline SVG rather than the 🔄 emoji: this box resolves that codepoint to a
+   CJK face with no emoji coverage and draws a tofu square, and a control the
+   user is meant to click should not depend on the font having the glyph. */
+.pr-refresh {
+  display: inline-flex; align-items: center; vertical-align: -2px;
+  background: none; border: 0; padding: 0; margin: 0 1px;
+  cursor: pointer; color: var(--dim);
+}
+.pr-refresh:hover { color: var(--accent); }
+.pr-refresh.spinning { animation: pr-spin .8s linear infinite; }
+@keyframes pr-spin { to { transform: rotate(360deg); } }
+
+/* Profiling: stage-split bars on /profiles. The seven stage colours only need
+   to be distinguishable from each other, and readable on both backgrounds. */
+.topbar-link { margin-left: auto; color: var(--dim); }
+.stage-col { width: 34%; }
+.stagebar {
+  display: flex; height: 9px; min-width: 120px; overflow: hidden;
+  border-radius: 3px; background: var(--panel);
+}
+.seg { display: inline-block; height: 9px; }
+.seg-refs { background: #8957e5; }
+.seg-numstat { background: var(--accent); }
+.seg-shas { background: #1f9c9c; }
+.seg-diff { background: var(--add); }
+.seg-serialise { background: #d29922; }
+.seg-network { background: var(--dim); }
+.seg-render { background: var(--del); }
+.legend { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+.legend .key { display: inline-flex; align-items: center; gap: 5px; }
+.legend .seg { width: 12px; border-radius: 2px; }
+
+/* Shared header: the link to the HUD, on every page. */
+.topnav { color: var(--dim); font-weight: 550; }
+.topnav.current { color: var(--fg); }
+
+/* HUD: my PRs across repos. The chips are the catalog's .pr-chip. */
+.hud-status { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.hud-section { margin-bottom: 28px; }
+.hud-section h2 { font-size: 15px; margin: 0 0 8px; }
+.hud-count {
+  font-size: 11px; font-weight: 550; color: var(--dim); vertical-align: 2px;
+  border: 1px solid var(--line); border-radius: 999px; padding: 0 7px; margin-left: 4px;
+}
+.hud-count:empty { display: none; }
+.hud-repo-name {
+  font: 600 12px/1.5 ui-monospace, monospace; color: var(--dim); margin: 14px 0 2px;
+}
+.hud-sub { font-size: 12px; color: var(--dim); margin: 14px 0 2px; font-weight: 550; }
+/* Fixed layout, so each repo's table in a section lines its columns up. */
+.hud-table { margin-bottom: 4px; table-layout: fixed; }
+.hud-table th:first-child { width: 55%; }
+.hud-table td { overflow-wrap: anywhere; }
+.hud-table tbody tr { cursor: default; }
+.hud-pr .pr-chip { margin: 0 8px 0 0; }
+.hud-repo {
+  font: 11px ui-monospace, monospace; color: var(--dim); margin-right: 8px;
+}
+.hud-wt {
+  font: 11px ui-monospace, monospace; margin-left: 8px; padding: 0 7px;
+  border: 1px solid var(--line); border-radius: 999px; white-space: nowrap;
+}
+.hud-reply { display: inline-block; margin-left: 8px; color: #d29922; font-weight: 550; }
+.hud-decision { margin-right: 8px; font-weight: 550; }
+.hud-approved { color: var(--add); }
+.hud-changes { color: var(--del); }
+.hud-waiting { color: var(--dim); margin-right: 4px; }
+.hud-reviewer {
+  display: inline-block; font-size: 11px; margin: 0 4px 2px 0; padding: 0 6px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
+}
+.hud-team { border-style: dashed; }
+.hud-error {
+  color: var(--del); border: 1px solid currentColor; border-radius: 6px; padding: 6px 10px;
+}
+.hud-error[hidden] { display: none; }

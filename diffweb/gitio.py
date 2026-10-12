@@ -1,0 +1,581 @@
+"""Thin, argv-only wrappers around git, plus worktree discovery."""
+
+from __future__ import annotations
+
+import concurrent.futures
+import fnmatch
+import functools
+import glob
+import hashlib
+import mimetypes
+import os
+import re
+import shutil
+import subprocess
+from collections.abc import Sequence
+from dataclasses import dataclass
+from pathlib import Path
+
+from . import structural
+from .config import DiffwebConfig
+
+# The sentinel end-of-range meaning "whatever is on disk right now".
+WORKTREE = "WORKTREE"
+
+# The sentinel end-of-range meaning "whatever is staged right now".
+INDEX = "INDEX"
+
+# The branch's upstream, as git spells it. Start of the "unpushed" range.
+UPSTREAM = "@{upstream}"
+
+# Refs reach us from query strings. Anything outside this alphabet - and
+# anything that could be read as an option - never makes it to argv.
+_REF_RE = re.compile(r"^[A-Za-z0-9._/~^{}@+-]+$")
+
+
+class GitError(RuntimeError):
+    pass
+
+
+def run_git(cwd: str | os.PathLike[str], *args: str, env: dict[str, str] | None = None) -> str:
+    proc = subprocess.run(
+        ["git", *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        env={**os.environ, **(env or {})},
+    )
+    if proc.returncode != 0:
+        raise GitError(f"git {' '.join(args)} failed in {cwd}: {proc.stderr.strip()}")
+    return proc.stdout
+
+
+def _try_git(cwd: str | os.PathLike[str], *args: str) -> str | None:
+    try:
+        return run_git(cwd, *args)
+    except GitError:
+        return None
+
+
+def run_git_bytes(cwd: str | os.PathLike[str], *args: str) -> bytes:
+    """Like run_git, for output that is not text - blob contents, mostly."""
+    proc = subprocess.run(["git", *args], cwd=str(cwd), capture_output=True)
+    if proc.returncode != 0:
+        raise GitError(f"git {' '.join(args)} failed in {cwd}: {proc.stderr.decode(errors='replace').strip()}")
+    return proc.stdout
+
+
+def validate_ref(ref: str) -> str:
+    if ref.startswith("-") or not _REF_RE.match(ref):
+        raise ValueError(f"refusing suspicious ref: {ref!r}")
+    return ref
+
+
+def resolve_ref(path: str | os.PathLike[str], ref: str) -> str:
+    """Validate a caller-supplied ref and return the commit sha it names."""
+    if ref in (WORKTREE, INDEX):
+        return ref
+    validate_ref(ref)
+    out = _try_git(path, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}")
+    if not out:
+        raise GitError(f"unknown ref {ref!r} in {path}")
+    return out.strip()
+
+
+@dataclass(frozen=True)
+class Worktree:
+    path: str
+    name: str
+    branch: str
+
+    @property
+    def id(self) -> str:
+        return hashlib.sha1(self.path.encode()).hexdigest()[:12]
+
+
+def _is_git_dir(p: Path) -> bool:
+    # Worktrees have a .git *file* pointing at the parent's gitdir.
+    return (p / ".git").exists()
+
+
+def _branch_of(path: str) -> str:
+    name = (_try_git(path, "rev-parse", "--abbrev-ref", "HEAD") or "").strip()
+    if not name or name == "HEAD":
+        sha = (_try_git(path, "rev-parse", "--short", "HEAD") or "").strip()
+        return f"detached @ {sha}" if sha else "detached"
+    return name
+
+
+def remote_url(path: str, remote: str = "origin") -> str | None:
+    """The fetch URL of a remote, or None when the repo has no such remote."""
+    url = (_try_git(path, "remote", "get-url", remote) or "").strip()
+    return url or None
+
+
+def _linked_worktrees(path: str) -> list[str]:
+    out = _try_git(path, "worktree", "list", "--porcelain") or ""
+    return [line[len("worktree ") :].strip() for line in out.splitlines() if line.startswith("worktree ")]
+
+
+def discover(config: DiffwebConfig) -> list[Worktree]:
+    """Union of the configured root globs and every worktree git knows about."""
+    candidates: list[str] = []
+    for root in config.expanded_roots():
+        for hit in glob.glob(root):
+            p = Path(hit)
+            if p.is_dir() and _is_git_dir(p):
+                candidates.append(str(p))
+
+    # Each hit can tell us about siblings the globs never reached.
+    for base in list(candidates):
+        candidates.extend(_linked_worktrees(base))
+
+    paths: list[str] = []
+    for cand in candidates:
+        real = os.path.realpath(cand)
+        if real not in paths and _is_git_dir(Path(real)):
+            paths.append(real)
+
+    names = _disambiguate(paths)
+    return sorted(
+        (Worktree(path=p, name=names[p], branch=_branch_of(p)) for p in paths),
+        key=lambda w: w.name,
+    )
+
+
+def _home_relative(path: str) -> str:
+    home = os.path.expanduser("~")
+    return f"~/{os.path.relpath(path, home)}" if path.startswith(home + os.sep) else path
+
+
+def _disambiguate(paths: list[str]) -> dict[str, str]:
+    """Basenames collide - several worktrees are called `code` - so anything
+    ambiguous falls back to its full (home-relative) path."""
+    names = {p: Path(p).name for p in paths}
+    counts: dict[str, int] = {}
+    for name in names.values():
+        counts[name] = counts.get(name, 0) + 1
+    return {p: (n if counts[n] == 1 else _home_relative(p)) for p, n in names.items()}
+
+
+def default_base(path: str) -> str:
+    """origin/HEAD if the repo has one, else the first plausible main branch."""
+    head = _try_git(path, "rev-parse", "--abbrev-ref", "origin/HEAD")
+    if head and head.strip() and head.strip() != "origin/HEAD":
+        return head.strip()
+    for candidate in ("origin/master", "origin/main", "master", "main"):
+        if _try_git(path, "rev-parse", "--verify", "--quiet", f"{candidate}^{{commit}}"):
+            return candidate
+    return "HEAD"
+
+
+def merge_base(path: str, base: str, head: str = "HEAD") -> str:
+    base_sha = resolve_ref(path, base)
+    head_sha = resolve_ref(path, head)
+    out = _try_git(path, "merge-base", base_sha, head_sha)
+    # Unrelated histories: fall back to the base itself so the page still renders.
+    return out.strip() if out else base_sha
+
+
+def commits(path: str, start: str, end: str = "HEAD", limit: int = 500) -> list[dict[str, object]]:
+    start_sha = resolve_ref(path, start)
+    end_sha = resolve_ref(path, "HEAD" if end in (WORKTREE, INDEX) else end)
+    fmt = "%H%x1f%h%x1f%an%x1f%ar%x1f%P%x1f%s"
+    out = _try_git(path, "log", f"--max-count={limit}", f"--format={fmt}", f"{start_sha}..{end_sha}") or ""
+    rows: list[dict[str, object]] = []
+    for line in out.splitlines():
+        sha, short, author, when, parents_, subject = line.split("\x1f")
+        rows.append(
+            {
+                "sha": sha,
+                "short": short,
+                "author": author,
+                "when": when,
+                "subject": subject,
+                # A merge commit gets two readings on the diff page (see app.api_diff).
+                "merge": len(parents_.split()) > 1,
+            }
+        )
+    return rows
+
+
+def _diff_args(start: str, end: str) -> list[str]:
+    # Ending at the worktree means a one-sided diff, which git reads as
+    # "start vs the files on disk" and so includes staged and unstaged work.
+    # Ending at the index is the same diff with `--cached`, so it shows only
+    # what is staged.
+    if end == INDEX:
+        return ["--cached", start]
+    return [start] if end == WORKTREE else [start, end]
+
+
+def test_pathspecs(patterns: Sequence[str], *, exclude: bool) -> list[str]:
+    """git glob pathspecs that drop (or keep only) the files matching `patterns`.
+
+    git does the filtering, so the numstat, the raw changes and the patch all
+    agree on which files are in the diff, for every kind of range.
+    """
+    magic = "exclude,glob" if exclude else "glob"
+    return [f":({magic}){p}" for p in patterns]
+
+
+def _pathspec_args(files: Sequence[str] | None, spec: Sequence[str]) -> list[str]:
+    # A spec of only exclusions means "everything but these", so it needs no
+    # positive path beside it.
+    return ["--", *(files or ()), *spec] if files or spec else []
+
+
+def diff_text(
+    path: str, start: str, end: str, files: list[str] | None = None, spec: Sequence[str] = ()
+) -> str:
+    args = ["diff", "--no-color", "-M", "-C", *_diff_args(start, end), *_pathspec_args(files, spec)]
+    text = _try_git(path, *args) or ""
+    if end == WORKTREE:
+        text += "".join(u.patch for u in untracked_changes(path, files, spec))
+    return text
+
+
+# --- untracked files ---------------------------------------------------------
+#
+# `git diff` never reports a file git has not been told about, and the app
+# promises never to write to a repo, so `git add -N` is out. When the range ends
+# at the working tree, untracked files are diffed one by one against /dev/null
+# with `--no-index` and folded into the numstat, raw-change and patch outputs as
+# plain additions, so the rest of the app never knows the difference.
+
+
+@dataclass
+class Untracked:
+    path: str
+    added: int | None
+    removed: int | None
+    binary: bool
+    sha: str
+    patch: str
+
+
+def untracked_files(path: str, spec: Sequence[str] = ()) -> list[str]:
+    """Untracked, non-ignored files. A nested repo shows up as `dir/` and is skipped."""
+    out = _try_git(path, "ls-files", "--others", "--exclude-standard", *_pathspec_args(None, spec)) or ""
+    return [f for f in out.splitlines() if f and not f.endswith("/")]
+
+
+@functools.lru_cache(maxsize=512)
+def _untracked_entry(path: str, file: str, mtime_ns: int, size: int) -> Untracked | None:
+    """One `git diff --no-index` per file, memoised on the file's stat so a live
+    reload that touched nothing re-reads nothing. Exit 1 means "differs", which
+    is the normal outcome here."""
+    proc = subprocess.run(
+        ["git", "diff", "--no-index", "--numstat", "-p", "--", "/dev/null", file],
+        cwd=path,
+        capture_output=True,
+    )
+    if proc.returncode not in (0, 1):
+        return None
+    out = proc.stdout.decode("utf-8", errors="replace")
+    numstat, _, patch = out.partition("\n\n")
+    try:
+        added, removed, _name = numstat.split("\t", 2)
+    except ValueError:
+        return None
+    try:
+        data = (Path(path) / file).read_bytes()
+    except OSError:
+        return None
+    sha = hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()  # what git hash-object would say
+    return Untracked(
+        path=file,
+        added=None if added == "-" else int(added),
+        removed=None if removed == "-" else int(removed),
+        binary=added == "-",
+        sha=sha,
+        patch=patch,
+    )
+
+
+def untracked_changes(
+    path: str, files: list[str] | None = None, spec: Sequence[str] = ()
+) -> list[Untracked]:
+    wanted = set(files) if files else None
+    out: list[Untracked] = []
+    for f in untracked_files(path, spec):
+        if wanted is not None and f not in wanted:
+            continue
+        try:
+            st = os.lstat(os.path.join(path, f))
+        except OSError:
+            continue
+        entry = _untracked_entry(path, f, st.st_mtime_ns, st.st_size)
+        if entry is not None:
+            out.append(entry)
+    return out
+
+
+def is_noisy(path: str, patterns: list[str]) -> bool:
+    """Lockfiles, generated code and snapshots: changed, but rarely read.
+
+    `**/x` should also match a top-level `x`, which fnmatch does not do on its
+    own, so that prefix is tried both ways.
+    """
+    candidates = {path}
+    for pattern in patterns:
+        variants = {pattern}
+        if pattern.startswith("**/"):
+            variants.add(pattern[3:])
+        if any(fnmatch.fnmatch(c, v) for c in candidates for v in variants):
+            return True
+    return False
+
+
+def _parse_numstat(out: str) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for line in out.splitlines():
+        added, removed, name = line.split("\t", 2)
+        rows.append(
+            {
+                "path": name,
+                "added": None if added == "-" else int(added),
+                "removed": None if removed == "-" else int(removed),
+                "binary": added == "-",
+                "image": is_image(rename_target(name)),
+            }
+        )
+    return rows
+
+
+# Without -z, git spells a rename as `dir/{old => new}.ext`, or `old => new`
+# when the two names share nothing. Everything else keys on the new name.
+_RENAME_RE = re.compile(r"^(.*)\{(.*) => (.*)\}(.*)$")
+
+
+def rename_target(numstat_name: str) -> str:
+    """The post-image path of a numstat row, undoing git's `{old => new}` shorthand."""
+    m = _RENAME_RE.match(numstat_name)
+    if m:
+        prefix, _old, new, suffix = m.groups()
+        return f"{prefix}{new}{suffix}"
+    if " => " in numstat_name:
+        return numstat_name.split(" => ", 1)[1]
+    return numstat_name
+
+
+def is_image(path: str) -> bool:
+    """Judged by extension: it decides only whether the page asks for a preview."""
+    kind, _ = mimetypes.guess_type(path)
+    return bool(kind and kind.startswith("image/"))
+
+
+def numstat(path: str, start: str, end: str, spec: Sequence[str] = ()) -> list[dict[str, object]]:
+    rows = _parse_numstat(
+        _try_git(path, "diff", "--numstat", "-M", "-C", *_diff_args(start, end), *_pathspec_args(None, spec))
+        or ""
+    )
+    if end == WORKTREE:
+        rows += [
+            {
+                "path": u.path,
+                "added": u.added,
+                "removed": u.removed,
+                "binary": u.binary,
+                "image": is_image(u.path),
+                "untracked": True,
+            }
+            for u in untracked_changes(path, spec=spec)
+        ]
+    return rows
+
+
+def _parse_raw(path: str, out: str) -> dict[str, dict[str, str]]:
+    """`git diff --raw` per post-image path: status letter, old path and blob sha."""
+    changes: dict[str, dict[str, str]] = {}
+    for line in out.splitlines():
+        meta, _, names = line.partition("\t")
+        if not names:
+            continue
+        parts = names.split("\t")
+        old, name = parts[0], parts[-1]
+        fields = meta.split()
+        dst = fields[3] if len(fields) > 3 else ""
+        status = fields[4][:1] if len(fields) > 4 else ""
+        if set(dst) <= {"0"}:
+            # Uncommitted: git reports zeros, so hash what is on disk.
+            dst = (_try_git(path, "hash-object", "--", name) or "").strip() or "worktree"
+        changes[name] = {"status": status, "old_path": old, "sha": dst}
+    return changes
+
+
+def raw_changes(path: str, start: str, end: str, spec: Sequence[str] = ()) -> dict[str, dict[str, str]]:
+    changes = _parse_raw(
+        path,
+        _try_git(path, "diff", "--raw", "-M", "-C", *_diff_args(start, end), *_pathspec_args(None, spec))
+        or "",
+    )
+    if end == WORKTREE:
+        for u in untracked_changes(path, spec=spec):
+            changes[u.path] = {"status": "A", "old_path": "", "sha": u.sha}
+    return changes
+
+
+def blob_shas(path: str, start: str, end: str) -> dict[str, str]:
+    """Post-image blob sha per file, used to tell 'reviewed' from 'changed since'."""
+    return {name: c["sha"] for name, c in raw_changes(path, start, end).items()}
+
+
+def blob_bytes(path: str, rev: str, file: str) -> bytes | None:
+    """The contents of `file` at `rev`, which may be a commit, the index or the worktree.
+
+    None when the file does not exist there. Worktree reads are pinned inside
+    the worktree so a symlink or `..` cannot reach past it.
+    """
+    if file.startswith("-") or "\0" in file:
+        raise ValueError(f"refusing suspicious path: {file!r}")
+    if rev == WORKTREE:
+        root = Path(path).resolve()
+        target = (root / file).resolve()
+        if not target.is_relative_to(root) or not target.is_file():
+            return None
+        return target.read_bytes()
+    spec = f":{file}" if rev == INDEX else f"{resolve_ref(path, rev)}:{file}"
+    try:
+        return run_git_bytes(path, "cat-file", "blob", spec)
+    except GitError:
+        return None
+
+
+# --- merge commits ---------------------------------------------------------
+#
+# A merge commit's diff against its first parent is mostly the other branch's
+# work. What the merger actually authored is the conflict resolution, and
+# `git show --remerge-diff` isolates that: it redoes the merge, then diffs the
+# conflicted result against what was committed. `git show` is `git diff`
+# against the commit's parents, so the same -M/-C/--numstat/--raw flags apply;
+# `--format=` drops the commit header so only the patch is left.
+
+
+def parents(path: str, sha: str) -> list[str]:
+    out = (_try_git(path, "rev-list", "--parents", "-n1", sha) or "").split()
+    return out[1:]
+
+
+def is_merge_commit(path: str, sha: str) -> bool:
+    return len(parents(path, sha)) > 1
+
+
+def _remerge_args(
+    sha: str, files: list[str] | None = None, *extra: str, spec: Sequence[str] = ()
+) -> list[str]:
+    return ["show", "--remerge-diff", "--format=", "--no-color", "-M", "-C", *extra, sha,
+            *_pathspec_args(files, spec)]
+
+
+def remerge_diff_text(
+    path: str, sha: str, files: list[str] | None = None, spec: Sequence[str] = ()
+) -> str:
+    return _try_git(path, *_remerge_args(sha, files, spec=spec)) or ""
+
+
+def remerge_numstat(path: str, sha: str, spec: Sequence[str] = ()) -> list[dict[str, object]]:
+    return _parse_numstat(_try_git(path, *_remerge_args(sha, None, "--numstat", spec=spec)) or "")
+
+
+def remerge_raw_changes(path: str, sha: str, spec: Sequence[str] = ()) -> dict[str, dict[str, str]]:
+    return _parse_raw(path, _try_git(path, *_remerge_args(sha, None, "--raw", spec=spec)) or "")
+
+
+def remerge_blob_shas(path: str, sha: str) -> dict[str, str]:
+    return {name: c["sha"] for name, c in remerge_raw_changes(path, sha).items()}
+
+
+def structural_diff(
+    path: str,
+    start: str,
+    end: str,
+    difft: str | None = None,
+    files: list[str] | None = None,
+    spec: Sequence[str] = (),
+) -> str:
+    """The range as a unified diff whose hunks are difftastic's verdict.
+
+    Runs git's own diff and difftastic (as `git diff --ext-diff`, in its JSON
+    mode) over the same range, then splices the two: see `structural.merge`.
+    The result is ordinary unified diff text, so the page draws it with the
+    same renderer as a line diff.
+    """
+    binary = difft or shutil.which("difft")
+    # A configured-but-missing path must read as "not installed", not as a git failure.
+    if not binary or not os.access(binary, os.X_OK):
+        raise FileNotFoundError(f"difft not usable: {binary or 'not on PATH'}")
+    env = {
+        "GIT_EXTERNAL_DIFF": binary,
+        "DFT_UNSTABLE": "yes",  # --display json is behind this flag
+        "DFT_DISPLAY": "json",
+        "DFT_COLOR": "never",
+    }
+    # Same -M/-C as the line diff so both see the same set of files.
+    args = ["diff", "--ext-diff", "-M", "-C", *_diff_args(start, end), *_pathspec_args(files, spec)]
+    difft_out = run_git(path, *args, env=env)
+    git_diff = diff_text(path, start, end, files, spec)
+    return structural.merge(
+        git_diff, difft_out, lambda rev, file: blob_bytes(path, rev, file), start, end
+    )
+
+
+def ahead_behind(path: str, base: str, head: str = "HEAD") -> tuple[int, int]:
+    """Commits on head not in base, and vice versa - the second half tells you
+    the branch has fallen behind and the diff may be misleading."""
+    base_sha = resolve_ref(path, base)
+    head_sha = resolve_ref(path, head)
+    out = _try_git(path, "rev-list", "--left-right", "--count", f"{base_sha}...{head_sha}")
+    if not out:
+        return (0, 0)
+    behind, ahead = out.split()
+    return (int(ahead), int(behind))
+
+
+def dirty_count(path: str) -> int:
+    """Files with uncommitted changes, staged or not."""
+    out = _try_git(path, "status", "--porcelain") or ""
+    return sum(1 for line in out.splitlines() if line.strip())
+
+
+@dataclass
+class Summary:
+    worktree: Worktree
+    base: str
+    merge_base: str
+    ahead: int
+    files: int
+    added: int
+    removed: int
+    last_commit: str
+    reviewed: int = 0
+    behind: int = 0
+    dirty: int = 0
+    pr: object | None = None
+    error: str | None = None
+
+
+def summarise(wt: Worktree, base: str) -> Summary:
+    try:
+        mb = merge_base(wt.path, base)
+        stats = numstat(wt.path, mb, WORKTREE)
+        ahead, behind = ahead_behind(wt.path, base)
+        return Summary(
+            worktree=wt,
+            base=base,
+            merge_base=mb,
+            ahead=ahead,
+            files=len(stats),
+            added=sum(int(r["added"] or 0) for r in stats),
+            removed=sum(int(r["removed"] or 0) for r in stats),
+            last_commit=(_try_git(wt.path, "log", "-1", "--format=%ar") or "").strip(),
+            behind=behind,
+            dirty=dirty_count(wt.path),
+        )
+    except (GitError, ValueError) as exc:
+        return Summary(wt, base, "", 0, 0, 0, 0, "", error=str(exc))
+
+
+def summarise_all(worktrees: list[Worktree], base_for: dict[str, str]) -> list[Summary]:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        return list(pool.map(lambda w: summarise(w, base_for.get(w.id) or default_base(w.path)), worktrees))

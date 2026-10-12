@@ -8,3 +8,16 @@ wheels/
 
 # Virtual environments
 .venv
+
+# diffweb vendored browser libs (poe fetch-diffweb-assets)
+diffweb/static/vendor/*
+!diffweb/static/vendor/.gitkeep
+
+# diffweb page scripts, bundled from diffweb/web/*.ts (poe diffweb-build)
+diffweb/static/dist/
+# diffweb dev tooling (bun install --cwd diffweb)
+diffweb/node_modules/
+# diffweb profile log, if it is configured inside the repo
+profiles.jsonl
+# diffweb wheels and sdists (uv build diffweb/)
+diffweb/dist/
