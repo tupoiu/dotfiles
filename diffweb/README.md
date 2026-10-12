@@ -9,7 +9,41 @@ commit picker so you can narrow to a single commit or any range.
 It is deliberately read-only and single-user: it binds `127.0.0.1`, shells out to
 `git`, and never writes to your repos.
 
-## Run it
+## Install it
+
+You do not need these dotfiles to use diffweb. With [uv] and [bun] on PATH:
+
+```console
+$ uv tool install "git+https://github.com/tupoiu/dotfiles#subdirectory=diffweb"
+$ diffweb --root '~/src/*'    # serves http://127.0.0.1:8765
+```
+
+`bun` is needed only to build, because the page scripts are bundled from
+TypeScript while the package is built. A wheel built elsewhere
+(`uv build diffweb/`) installs with no bun: `uv tool install ./diffweb-*.whl`.
+Upgrade with `uv tool upgrade diffweb` (add `--reinstall` if the version did not change).
+
+You also need `git`. These are optional:
+- `gh`, logged in (`gh auth login`), for the PR chips and the HUD.
+- `difft`, for the structural diff.
+
+Each `--root` is a glob for the folders that hold your checkouts. Repeat it for
+more. Without `--root`, diffweb looks in `~/code`, `~/code.*` and
+`~/worktrees/*/*`. To keep your settings, put them in `~/.config/diffweb.yaml`
+(see [Configuration](#configuration)). `diffweb --print-config` prints
+the config in effect, and is a good start for that file:
+
+```console
+$ diffweb --root '~/src/*' --print-config > ~/.config/diffweb.yaml
+```
+
+`--port` and `--config PATH` also override the file for one run. `diffweb --help`
+lists every flag.
+
+The server binds `127.0.0.1`, so only you can open the page. It reads your repos
+and never writes to them. Its only network use is `gh`.
+
+## Work on it (from the dotfiles)
 
 ```console
 $ uv sync                     # installs the server into the project venv
@@ -451,3 +485,4 @@ and a decision log of the surprises. Read the gotchas there before starting.
 [diff2html]: https://diff2html.xyz/
 [bun]: https://bun.sh/
 [difftastic]: https://difftastic.wilfred.me.uk/
+[uv]: https://docs.astral.sh/uv/

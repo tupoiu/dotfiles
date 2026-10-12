@@ -14,6 +14,10 @@ import yaml
 from pydantic import BaseModel, Field, field_validator
 
 ENV_VAR = "DIFFWEB_CONFIG"
+# Set by the command line (`diffweb --port/--root`) and read here, so the
+# uvicorn worker, which loads the config again, sees them too.
+PORT_ENV_VAR = "DIFFWEB_PORT"
+ROOTS_ENV_VAR = "DIFFWEB_ROOTS"  # globs joined with os.pathsep
 DEFAULT_CONFIG_PATH = "~/.config/diffweb.yaml"
 
 
@@ -149,11 +153,14 @@ def load_config(path: str | os.PathLike[str] | None = None) -> DiffwebConfig:
     """Load config, falling back to defaults when the file is absent.
 
     A malformed file is a startup error rather than something we paper over.
+    $DIFFWEB_PORT and $DIFFWEB_ROOTS override the file.
     """
     resolved = config_path(path)
-    if not resolved.exists():
-        return DiffwebConfig()
-    raw = yaml.safe_load(resolved.read_text()) or {}
+    raw = (yaml.safe_load(resolved.read_text()) or {}) if resolved.exists() else {}
     if not isinstance(raw, dict):
         raise ValueError(f"{resolved}: expected a YAML mapping, got {type(raw).__name__}")
+    if port := os.environ.get(PORT_ENV_VAR):
+        raw["server"] = {**(raw.get("server") or {}), "port": int(port)}
+    if roots := os.environ.get(ROOTS_ENV_VAR):
+        raw["roots"] = roots.split(os.pathsep)
     return DiffwebConfig.model_validate(raw)

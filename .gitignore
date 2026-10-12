@@ -19,3 +19,5 @@ diffweb/static/dist/
 diffweb/node_modules/
 # diffweb profile log, if it is configured inside the repo
 profiles.jsonl
+# diffweb wheels and sdists (uv build diffweb/)
+diffweb/dist/

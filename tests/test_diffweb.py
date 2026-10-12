@@ -20,6 +20,7 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
+from diffweb import __main__ as diffweb_main
 from diffweb import forge, gitio, profiling
 from diffweb.config import DiffwebConfig, Noise, load_config
 from diffweb.gitio import INDEX, UPSTREAM, WORKTREE
@@ -153,6 +154,47 @@ def test_unknown_key_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setenv("DIFFWEB_CONFIG", str(p))
     with pytest.raises(Exception):
         load_config()
+
+
+def clear_cli_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unset what apply_args sets, so that teardown removes it again.
+
+    A plain delenv of an unset variable records nothing to restore.
+    """
+    for var in ("DIFFWEB_CONFIG", "DIFFWEB_PORT", "DIFFWEB_ROOTS"):
+        monkeypatch.setenv(var, "")
+        monkeypatch.delenv(var)
+
+
+def test_env_overrides_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    p = tmp_path / "c.yaml"
+    p.write_text(yaml.safe_dump({"roots": ["~/x"], "server": {"host": "0.0.0.0", "port": 9999}}))
+    monkeypatch.setenv("DIFFWEB_CONFIG", str(p))
+    monkeypatch.setenv("DIFFWEB_PORT", "9001")
+    monkeypatch.setenv("DIFFWEB_ROOTS", os.pathsep.join(["~/a", "/b/*"]))
+    cfg = load_config()
+    assert cfg.server.port == 9001
+    assert cfg.server.host == "0.0.0.0"  # the rest of server: is kept
+    assert cfg.roots == ["~/a", "/b/*"]
+
+
+def test_cli_flags_reach_load_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    clear_cli_env(monkeypatch)
+    p = tmp_path / "c.yaml"
+    p.write_text(yaml.safe_dump({"features": {"structural": True}}))
+    args = diffweb_main.parse_args(["--config", str(p), "--port", "9002", "--root", "~/a", "--root", "~/b"])
+    diffweb_main.apply_args(args)
+    cfg = load_config()
+    assert (cfg.features.structural, cfg.server.port, cfg.roots) == (True, 9002, ["~/a", "~/b"])
+
+
+def test_print_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    clear_cli_env(monkeypatch)
+    diffweb_main.main(["--config", str(tmp_path / "nope.yaml"), "--port", "9003", "--print-config"])
+    out = capsys.readouterr().out
+    assert out.startswith(f"# {tmp_path / 'nope.yaml'} (absent: defaults)\n")
+    # What it prints is itself a valid config.
+    assert DiffwebConfig.model_validate(yaml.safe_load(out)).server.port == 9003
 
 
 # --- discovery ------------------------------------------------------------
