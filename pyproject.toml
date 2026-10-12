@@ -29,8 +29,13 @@ pythonpath = ["."]  # the repo is not an installed package; diffweb is imported 
 [tool.poe.tasks]
 # We use cgroupfs because WSL doesn't work normally with cgroups
 build-claude = "podman build --cgroup-manager=cgroupfs -t claude-default claude-docker"
+# Builds the image as an OCI layout with one cached blob per layer, then pulls
+# it. Only changed layers are tarred, and podman reads only new blobs.
+build-nix = "python3 nix/oci_cached.py"
 build-playwright = "podman build --cgroup-manager=cgroupfs -t playwright-default --build-arg BASE_IMAGE=localhost/claude-default:latest playwright-docker"
 test-claude = {cmd = "pytest tests/", executor = "uv" }
+# Pointer only. Poe runs tasks without a terminal, which breaks the test subshell.
+fish-alias = { cmd = "echo 'fish-alias is a fish function: run fish-alias from fish.'", help = "Add/list/show/rm fish aliases: run the fish-alias function from fish, not poe" }
 
 # diffweb - local web UI for reviewing diffs across git worktrees. See diffweb/README.md
 # The page scripts are TypeScript (diffweb/web/), bundled by bun into the

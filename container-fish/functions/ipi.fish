@@ -1,0 +1,2 @@
+set PI_CACHE_RETENTION long
+pi

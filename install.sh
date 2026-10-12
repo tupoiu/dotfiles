@@ -6,16 +6,17 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 sudo apt install -y build-essential
 sudo apt install -y mold clang
 
-sudo apt install -y jq  # used by claude-statusline helper
-sudo apt install -y bubblewrap  # sandbox backend Claude Code shells out to on Linux
+sudo apt install -y jq         # used by claude-statusline helper
+sudo apt install -y bubblewrap # sandbox backend Claude Code shells out to on Linux
 
 cargo install cargo-binstall
 
 cargo binstall -y jj-cli
+cargo binstall -y git-branchless
 cargo binstall -y uv
 cargo binstall -y ripgrep
-cargo binstall -y zellij  # optional
-cargo binstall -y watchexec-cli  # optional
+cargo binstall -y zellij        # optional
+cargo binstall -y watchexec-cli # optional
 
 # jj config
 jj config set --user user.name "Peter Tupoiu"
@@ -28,6 +29,7 @@ uv tool install poethepoet
 # Shell tools
 sudo apt install -y fish
 sudo apt install -y fzf
+sudo apt install -y btop
 uv tool update-shell
 source ~/.profile
 fish -c 'fish_add_path ~/.local/bin'
@@ -47,20 +49,17 @@ touch ~/.claude.json
 cp $(realpath claude-docker/claude-settings.json) ~/.claude/settings.json
 
 # Fish functions
-mkdir -p ~/.config/fish/functions
-for f in fish/functions/*.fish; do
-    ln -sf $(realpath $f) ~/.config/fish/functions/$(basename $f)
-done
+bash $(dirname $(realpath $0))/install_fish_functions.sh
 
 # Zellij config
 mkdir -p ~/.config/zellij
-cp $(realpath zellij/config.kdl) ~/.config/zellij/config.kdl
+# cp $(realpath zellij/config.kdl) ~/.config/zellij/config.kdl
 
 # Bash helpers
 mkdir -p ~/.helpers
 for f in bash-helpers/*.sh; do
-    cp $(realpath $f) ~/.helpers/$(basename $f .sh)
-    chmod +x ~/.helpers/$(basename $f .sh)
+  cp $(realpath $f) ~/.helpers/$(basename $f .sh)
+  chmod +x ~/.helpers/$(basename $f .sh)
 done
 fish -c 'fish_add_path ~/.helpers'
 
