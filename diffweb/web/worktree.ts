@@ -404,7 +404,7 @@ function draw(diffText: string, target?: HTMLElement): void {
   const node = target ?? $diff;
   const files = parseDiff(diffText);
   const html: string[] = target ? [] : [fileListHtml(files)];
-  const made: [string, Drawn, boolean][] = [];
+  const made: [Drawn, boolean][] = [];
   for (const file of files) {
     const key = filePath(file);
     const path = infoByPath[key]?.path ?? key;
@@ -412,18 +412,20 @@ function draw(diffText: string, target?: HTMLElement): void {
       key,
       view: { file, sideBySide: $sbs.checked, revealed: revealedByFile.get(revealKey(key)) ?? [] },
     };
-    const id = anchorFor(path);
     const ready = prepare(d);
-    html.push(renderFile(d.view, { id, path, name: displayName(path) }));
-    made.push([id, d, ready]);
+    html.push(renderFile(d.view, { id: anchorFor(path), path, name: displayName(path) }));
+    made.push([d, ready]);
   }
   node.innerHTML = html.join("");
-  for (const [id, d, ready] of made) {
-    const wrapper = node.querySelector<HTMLElement>(`#${id}`);
-    if (!wrapper) continue;
+  // Pair by order, not by id: a type change (file to symlink) is two entries
+  // for one path, so two wrappers share an id.
+  const wrappers = node.querySelectorAll<HTMLElement>(":scope > .dw-file");
+  made.forEach(([d, ready], i) => {
+    const wrapper = wrappers[i];
+    if (!wrapper) return;
     drawn.set(wrapper, d);
     if (!ready) textObserver.observe(wrapper);
-  }
+  });
   if (!target) decorateFiles(node);
 }
 
