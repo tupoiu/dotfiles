@@ -131,6 +131,12 @@ describe("highlighting", () => {
     expect(languageFor("uv.lock")).toBeNull();
   });
 
+  test("names that Object has do not throw", () => {
+    for (const path of ["src/constructor", "a/__proto__", "x.constructor", "y.__proto__", "z.toString"]) {
+      expect(languageFor(path)).toBeNull();
+    }
+  });
+
   test("highlighting that does not match the diff line is not used", () => {
     const view: FileView = {
       file: one(SIMPLE), sideBySide: false,

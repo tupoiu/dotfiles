@@ -19,25 +19,26 @@ interface Hljs {
 const hljs = (): Hljs | undefined => (globalThis as { hljs?: Hljs }).hljs;
 
 // Names highlight.js does not know as aliases. Anything else is tried as-is.
-const BY_EXTENSION: Record<string, string> = {
+// Maps, not plain objects: a file called `constructor` must not find Object's.
+const BY_EXTENSION = new Map(Object.entries({
   jsonc: "json", jsonl: "json", lock: "", tsx: "typescript", mjs: "javascript", cjs: "javascript",
   pyi: "python",
-};
-const BY_NAME: Record<string, string> = {
+}));
+const BY_NAME = new Map(Object.entries({
   Dockerfile: "dockerfile", Makefile: "makefile", "CMakeLists.txt": "cmake",
   ".bashrc": "bash", ".zshrc": "bash", ".profile": "bash", ".gitconfig": "ini",
-};
+}));
 
 export function languageFor(path: string): string | null {
   const h = hljs();
   if (!h) return null;
   const base = path.slice(path.lastIndexOf("/") + 1);
-  const named = BY_NAME[base];
+  const named = BY_NAME.get(base);
   if (named) return h.getLanguage(named) ? named : null;
   const dot = base.lastIndexOf(".");
   if (dot <= 0) return null;
   const ext = base.slice(dot + 1).toLowerCase();
-  const lang = BY_EXTENSION[ext] ?? ext;
+  const lang = BY_EXTENSION.get(ext) ?? ext;
   return lang && h.getLanguage(lang) ? lang : null;
 }
 
