@@ -371,6 +371,8 @@ def test_hud_page_and_header_link(client: TestClient) -> None:
     page = client.get("/hud")
     assert page.status_code == 200
     assert 'id="section-mine"' in page.text and "dist/hud/hud.js" in page.text
+    # Each section says it is loading until the script fills it in.
+    assert page.text.count('class="empty hud-loading">Loading&hellip;') == 4
     assert 'class="topnav current" href="/hud"' in page.text
     # Every page links to it, not only the catalog.
     assert 'href="/hud">HUD</a>' in client.get("/").text

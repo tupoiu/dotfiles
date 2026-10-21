@@ -313,7 +313,11 @@ async function load(mode: "cached" | "fresh" | "force"): Promise<void> {
     render();
     showStatus();
   }
-  if (!got?.data) return;
+  if (!got?.data) {
+    // GitHub answered with an error and nothing is cached: the error says so.
+    if (got) for (const p of document.querySelectorAll(".hud-loading")) p.remove();
+    return;
+  }
   // A stale first paint is followed straight away by a fresh one; the details
   // wait for it, so they are asked for the right set of PRs.
   if (got.stale && mode === "cached") return load("fresh");
