@@ -1264,10 +1264,10 @@ def test_stale_check_reports_a_growing_age(
 # --- how changed lines are grouped ----------------------------------------
 
 BUN = shutil.which("bun")
-D2H_CORE = Path(__file__).parent.parent / "diffweb" / "static" / "vendor" / "diff2html.min.js"
+JSDIFF = Path(__file__).parent.parent / "diffweb" / "static" / "vendor" / "diff.min.js"
 needs_bun = pytest.mark.skipif(
-    not BUN or not D2H_CORE.exists(),
-    reason="needs bun and the vendored diff2html core (poe fetch-diffweb-assets)",
+    not BUN or not JSDIFF.exists(),
+    reason="needs bun and the vendored jsdiff (poe fetch-diffweb-assets)",
 )
 
 TWO_FOR_TWO = "\n".join([
@@ -1584,9 +1584,9 @@ REMERGE_PATCH = "\n".join([
 
 @needs_bun
 def test_remerge_patch_renders_despite_the_conflict_header_line() -> None:
-    """git puts a `remerge CONFLICT` line in the extended header, which diff2html
-    has never heard of. It must be skipped, not mistaken for the patch."""
-    assert render_order(REMERGE_PATCH) == "..-----+."
+    """git puts a `remerge CONFLICT` line in the extended header, which is not
+    part of the usual format. It must be kept as a note, not mistaken for the patch."""
+    assert render_order(REMERGE_PATCH) == ".-----+."
 
 
 # --- images ---------------------------------------------------------------
@@ -1694,6 +1694,43 @@ def test_blob_refuses_what_it_should(client: TestClient, config: DiffwebConfig, 
     # Option-shaped inputs never reach git.
     assert client.get(f"/api/w/{wt}/blob", params={"rev": "--output=x", "path": "logo.png"}).status_code == 400
     assert client.get(f"/api/w/{wt}/blob", params={"rev": WORKTREE, "path": "--x.png"}).status_code == 400
+
+
+
+# --- whole-file text, for highlighting and the expanders ----------------------
+
+
+def test_text_serves_each_end_of_a_range(client: TestClient, config: DiffwebConfig, world: dict[str, Path]) -> None:
+    wt = wt_id(config, "proj")
+    head = git(world["repo"], "rev-parse", "HEAD").strip()
+    r = client.get(f"/api/w/{wt}/text", params={"rev": head, "path": "a.txt"})
+    assert r.status_code == 200 and r.text == "one\nTWO\nthree\n"
+    assert r.headers["content-type"].startswith("text/plain")
+    assert "immutable" in r.headers["cache-control"]
+    # Not limited to the files in the diff, and the start of a range works too.
+    assert client.get(f"/api/w/{wt}/text", params={"rev": "master", "path": "a.txt"}).text == "one\ntwo\nthree\n"
+    r = client.get(f"/api/w/{wt}/text", params={"rev": WORKTREE, "path": "b.txt"})
+    assert r.text == "beta\nuncommitted\n" and r.headers["cache-control"] == "no-store"
+    (world["repo"] / "b.txt").write_text("beta\nstaged\n")
+    git(world["repo"], "add", "b.txt")
+    assert client.get(f"/api/w/{wt}/text", params={"rev": INDEX, "path": "b.txt"}).text == "beta\nstaged\n"
+
+
+def test_text_refuses_what_it_should(client: TestClient, config: DiffwebConfig, world: dict[str, Path], tmp_path: Path) -> None:
+    wt = wt_id(config, "proj")
+    (world["repo"] / "bin.dat").write_bytes(b"ab\0cd")
+    assert client.get(f"/api/w/{wt}/text", params={"rev": WORKTREE, "path": "bin.dat"}).status_code == 415
+    assert client.get(f"/api/w/{wt}/text", params={"rev": "master", "path": "c.txt"}).status_code == 404
+    (tmp_path / "secret.txt").write_text("no")
+    assert client.get(f"/api/w/{wt}/text", params={"rev": WORKTREE, "path": "../secret.txt"}).status_code == 404
+    assert client.get(f"/api/w/{wt}/text", params={"rev": "--output=x", "path": "a.txt"}).status_code == 400
+
+
+def test_worktree_page_carries_the_highlight_limit(client: TestClient, config: DiffwebConfig) -> None:
+    html = client.get(f"/w/{wt_id(config, 'proj')}").text
+    assert 'data-highlight-max="1000000"' in html
+    assert "vendor/highlight.min.js" in html and "vendor/diff.min.js" in html
+    assert "diff2html" not in html
 
 
 # --- PR chip colours --------------------------------------------------------

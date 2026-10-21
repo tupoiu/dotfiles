@@ -1,5 +1,7 @@
 import { refresh as refreshKeys } from "./keys.ts";
-import { diffwebRenderOptions } from "./render-options.ts";
+import { filePath, parseDiff, type DiffFile } from "./diff/parse.ts";
+import { addInterval, esc, renderBody, renderFile, type FileView, type Interval } from "./diff/render.ts";
+import { fileLines, highlightFile, highlightLine, languageFor, type HlLine } from "./diff/highlight.ts";
 
 // --- what the server sends ------------------------------------------------
 
@@ -71,6 +73,8 @@ const $summary = byId<HTMLElement>("summary");
 const $diff = byId<HTMLElement>("diff");
 const $toggleAll = byId<HTMLButtonElement>("toggle-all");
 const $scopes = byId<HTMLElement>("scopes");
+// Above this many bytes a file is not highlighted whole (limits.max_highlight_bytes).
+const MAX_HIGHLIGHT = Number(el.dataset.highlightMax) || 1_000_000;
 
 const MERGE_BASE = "";           // empty start means "merge base with base ref"
 const WORKTREE = "";             // empty end means "working tree"
@@ -91,8 +95,10 @@ const SCOPES: Record<string, { start: string; end: string }> = {
 // What the last render drew, for the handlers that run after it.
 let currentReview: Record<string, ReviewState> = {};
 let shas: Record<string, string> = {};
-let fileInfo: Record<string, FileInfo> = {};
+let fileInfo: Record<string, FileInfo> = {};    // keyed on the numstat spelling
+let infoByPath: Record<string, FileInfo> = {};  // keyed on the plain path the parser reports
 let currentRange = { start: "", end: "", remerge: false };  // as the server resolved them
+let canExpand = false;      // expanders only on the line diff; see INTENT-expand-context.md
 let seededNoise = false;    // auto-collapse noisy files once, not on every render
 
 // --- localStorage, which can be full, corrupt or missing ------------------
@@ -176,7 +182,7 @@ function setCollapsed(wrapper: HTMLElement, path: string, value: boolean): void 
   refreshToggleAll();
 }
 
-const fileWrappers = () => [...$diff.querySelectorAll<HTMLElement>(".d2h-file-wrapper")];
+const fileWrappers = () => [...$diff.querySelectorAll<HTMLElement>(".dw-file")];
 
 function refreshToggleAll(): boolean {
   const wrappers = fileWrappers();
@@ -253,8 +259,8 @@ async function loadCommits(): Promise<boolean> {
   return true;
 }
 
-// Anything that throws mid-render (a missing vendored library, a diff2html
-// parse error) would otherwise leave "loading diff…" up forever.
+// Anything that throws mid-render (a missing vendored library, a diff the
+// parser cannot read) would otherwise leave "loading diff…" up forever.
 async function render(): Promise<void> {
   try {
     await renderDiff();
@@ -295,7 +301,9 @@ async function renderDiff(): Promise<void> {
   currentReview = data.review || {};
   shas = data.shas || {};
   currentRange = { start: data.start, end: data.end, remerge: !!data.remerge };
+  canExpand = data.renderer === "line" && !data.remerge;
   fileInfo = Object.fromEntries(files.map((f) => [f.path, f]));
+  infoByPath = Object.fromEntries(files.map((f) => [renameTarget(f.path), f]));
   seedNoise(files);
   const added = files.reduce((n, f) => n + (f.added || 0), 0);
   const removed = files.reduce((n, f) => n + (f.removed || 0), 0);
@@ -309,6 +317,7 @@ async function renderDiff(): Promise<void> {
     testsNote(data) + mergeNote(data) + structuralNote(data);
 
   const renderStart = performance.now();
+  textObserver.disconnect();
   if (data.lazy) {
     $diff.replaceChildren();
     $summary.innerHTML += ` · <span class="warn">diff is large — loading per file</span>`;
@@ -358,13 +367,63 @@ function reportProfile(profileId: string | undefined, fetchMs: number, renderMs:
   }).catch(() => { /* profiling is never worth breaking the page over */ });
 }
 
+// --- drawing --------------------------------------------------------------
+
+// What each drawn file was drawn from, so it can be drawn again in place.
+interface Drawn {
+  view: FileView;
+  key: string;  // the plain path: review state, blob shas and expansions use it
+}
+const drawn = new WeakMap<HTMLElement, Drawn>();
+
+// Lines the user has expanded, per file. Keyed on the end side's blob sha:
+// expanded line numbers mean nothing once the file has changed.
+const revealedByFile = new Map<string, Interval[]>();
+const revealKey = (key: string) => `${key}\0${shaFor(key)}`;
+
+// A stable anchor per path, for the file list's links.
+function anchorFor(path: string): string {
+  let h = 5381;
+  for (let i = 0; i < path.length; i++) h = ((h * 33) ^ path.charCodeAt(i)) >>> 0;
+  return `file-${h.toString(36)}`;
+}
+
+function fileListHtml(files: DiffFile[]): string {
+  if (!files.length) return "";
+  const items = files.map((f) => {
+    const path = infoByPath[filePath(f)]?.path ?? filePath(f);
+    return `<li><a href="#${anchorFor(path)}">${esc(displayName(path))}</a></li>`;
+  });
+  return `<details class="dw-file-list"><summary>files (${files.length})</summary><ol>${items.join("")}</ol></details>`;
+}
+
+const displayName = (path: string) => path.replace(" => ", " → ");
+
 // `target` is one file's holder in a lazy render; the whole page otherwise.
 function draw(diffText: string, target?: HTMLElement): void {
   const node = target ?? $diff;
-  const ui = new Diff2HtmlUI(node, diffText,
-    diffwebRenderOptions({ sideBySide: $sbs.checked, drawFileList: !target }));
-  ui.draw();
-  ui.highlightCode();
+  const files = parseDiff(diffText);
+  const html: string[] = target ? [] : [fileListHtml(files)];
+  const made: [string, Drawn, boolean][] = [];
+  for (const file of files) {
+    const key = filePath(file);
+    const path = infoByPath[key]?.path ?? key;
+    const d: Drawn = {
+      key,
+      view: { file, sideBySide: $sbs.checked, revealed: revealedByFile.get(revealKey(key)) ?? [] },
+    };
+    const id = anchorFor(path);
+    const ready = prepare(d);
+    html.push(renderFile(d.view, { id, path, name: displayName(path) }));
+    made.push([id, d, ready]);
+  }
+  node.innerHTML = html.join("");
+  for (const [id, d, ready] of made) {
+    const wrapper = node.querySelector<HTMLElement>(`#${id}`);
+    if (!wrapper) continue;
+    drawn.set(wrapper, d);
+    if (!ready) textObserver.observe(wrapper);
+  }
   if (!target) decorateFiles(node);
 }
 
@@ -379,6 +438,123 @@ async function renderLazy(files: FileInfo[], q: Query): Promise<void> {
   decorateFiles($diff);
 }
 
+function redrawBody(wrapper: HTMLElement): void {
+  const d = drawn.get(wrapper);
+  const body = wrapper.querySelector(".dw-file-body");
+  if (d && body) body.innerHTML = renderBody(d.view);
+}
+
+// --- highlighting and expanding ---------------------------------------------
+//
+// A file is drawn plain first. When it comes near the viewport, the page
+// fetches the text of its two sides, highlights each side whole, and draws
+// the file again. The end side's text is also what the expanders show.
+
+// One side of a file, kept for the life of the page so that a redraw (the
+// side-by-side toggle, live reload) draws at once, with nothing to fetch. The
+// keys cannot go stale: the old side is a commit and a path, and the new side
+// is its blob sha.
+interface Side {
+  lines: string[];
+  hl: HlLine[] | null;  // null when the language is unknown or the file is too big
+}
+const sideFetches = new Map<string, Promise<Side | null>>();
+const sidesReady = new Map<string, Side | null>();
+
+const textObserver = new IntersectionObserver((entries) => {
+  for (const e of entries) {
+    if (!e.isIntersecting) continue;
+    textObserver.unobserve(e.target);
+    enrich(e.target as HTMLElement).catch((err) => console.error(err));
+  }
+}, { rootMargin: "1200px 0px" });
+
+async function fetchText(rev: string, path: string): Promise<string | null> {
+  const r = await fetch(api("text", { rev, path }));
+  return r.ok ? r.text() : null;
+}
+
+interface SideWant { key: string | null; rev: string; path: string }
+
+// Which sides a file needs, and the cache key of each (null: do not cache).
+function wantedSides(d: Drawn): { lang: string | null; expand: boolean; old?: SideWant; new?: SideWant } {
+  const f = d.view.file;
+  const lang = languageFor(filePath(f));
+  const expand = canExpand && f.status !== "deleted";
+  const out: ReturnType<typeof wantedSides> = { lang, expand };
+  if (f.binary || !f.hunks.length) return out;
+  // The remerge diff's old side is git's own merge, which is in no commit.
+  if (lang && f.status !== "added" && !currentRange.remerge) {
+    out.old = { key: `${lang}:${currentRange.start}:${f.oldPath}`, rev: currentRange.start, path: f.oldPath };
+  }
+  if ((lang || expand) && f.status !== "deleted") {
+    const sha = shas[d.key];
+    out.new = { key: sha ? `${lang}:${sha}` : null, rev: currentRange.end, path: f.newPath };
+  }
+  return out;
+}
+
+function loadSide(want: SideWant, lang: string | null): Promise<Side | null> {
+  const cached = want.key === null ? undefined : sideFetches.get(want.key);
+  if (cached) return cached;
+  const p = fetchText(want.rev, want.path).then((text) => text === null ? null : {
+    lines: fileLines(text),
+    hl: lang && text.length <= MAX_HIGHLIGHT ? highlightFile(text, lang) : null,
+  });
+  if (want.key !== null) {
+    sideFetches.set(want.key, p);
+    p.then((side) => sidesReady.set(want.key!, side), () => sideFetches.delete(want.key!));
+  }
+  return p;
+}
+
+function applySides(d: Drawn, lang: string | null, expand: boolean, old: Side | null, now: Side | null): void {
+  if (lang) {
+    d.view.highlight = (side, no, text): HlLine => {
+      const line = (side === "old" ? old : now)?.hl?.[no - 1];
+      if (line && line.map((s) => s.text).join("") === text) return line;
+      return highlightLine(text, lang);
+    };
+  }
+  if (expand && now) d.view.endLines = now.lines;
+}
+
+// Use what the cache already has. False when a side still has to be fetched.
+function prepare(d: Drawn): boolean {
+  const w = wantedSides(d);
+  if (!w.old && !w.new) return true;
+  const ready = (s?: SideWant) => !s || (s.key !== null && sidesReady.has(s.key));
+  if (!ready(w.old) || !ready(w.new)) return false;
+  const get = (s?: SideWant) => (s ? sidesReady.get(s.key!) ?? null : null);
+  applySides(d, w.lang, w.expand, get(w.old), get(w.new));
+  return true;
+}
+
+async function enrich(wrapper: HTMLElement): Promise<void> {
+  const d = drawn.get(wrapper);
+  if (!d) return;
+  const w = wantedSides(d);
+  if (!w.old && !w.new) return;
+  const [old, now] = await Promise.all([
+    w.old ? loadSide(w.old, w.lang) : null,
+    w.new ? loadSide(w.new, w.lang) : null,
+  ]);
+  if (drawn.get(wrapper) !== d) return;
+  applySides(d, w.lang, w.expand, old, now);
+  redrawBody(wrapper);
+}
+
+$diff.addEventListener("click", (e) => {
+  const btn = (e.target as Element).closest<HTMLButtonElement>(".dw-expand");
+  const wrapper = btn?.closest<HTMLElement>(".dw-file");
+  const d = wrapper && drawn.get(wrapper);
+  if (!btn || !wrapper || !d) return;
+  const next = addInterval(d.view.revealed ?? [], { from: Number(btn.dataset.from), to: Number(btn.dataset.to) });
+  revealedByFile.set(revealKey(d.key), next);
+  d.view.revealed = next;
+  redrawBody(wrapper);
+});
+
 // --- decorating each file -------------------------------------------------
 
 function tag(className: string, text: string, title?: string): HTMLSpanElement {
@@ -389,17 +565,13 @@ function tag(className: string, text: string, title?: string): HTMLSpanElement {
   return span;
 }
 
-// diff2html gives us neither a collapse control nor a review affordance, so
-// both get bolted onto each file header here.
+// The collapse control, the counts and the review tick on each file header.
 function decorateFiles(root: HTMLElement): void {
-  for (const wrapper of root.querySelectorAll<HTMLElement>(".d2h-file-wrapper")) {
-    const nameEl = wrapper.querySelector(".d2h-file-name");
-    const header = wrapper.querySelector<HTMLElement>(".d2h-file-header");
-    if (!nameEl || !header) continue;
-    // diff2html spells a rename `dir/{old → new}` where git's numstat says
-    // `dir/{old => new}`; the numstat spelling is the key everywhere else.
-    const path = nameEl.textContent!.trim().replace(" → ", " => ");
-    wrapper.dataset.path = path;
+  for (const wrapper of root.querySelectorAll<HTMLElement>(".dw-file")) {
+    const header = wrapper.querySelector<HTMLElement>(".dw-file-header");
+    if (!header || header.querySelector(".chevron")) continue;
+    // The numstat spelling (`dir/{old => new}`) is the key for collapsing.
+    const path = wrapper.dataset.path!;
     // Review state and blob shas come from `git diff --raw`, keyed on the plain new path.
     const reviewKey = renameTarget(path);
 
@@ -485,7 +657,7 @@ function queueImagePane(wrapper: HTMLElement, info: FileInfo): void {
 }
 
 function addImagePane(wrapper: HTMLElement, info: FileInfo): void {
-  const body = wrapper.querySelector(".d2h-file-diff, .d2h-files-diff");
+  const body = wrapper.querySelector(".dw-file-body");
   if (!body || wrapper.querySelector(".image-diff")) return;
   const newPath = renameTarget(info.path);
   const sides: { label: string; url: string; cls: string }[] = [];
@@ -525,10 +697,10 @@ function addImagePane(wrapper: HTMLElement, info: FileInfo): void {
     fig.append(cap, link);
     pane.appendChild(fig);
   }
-  // The pane follows the body rather than sitting in it: side-by-side's body
-  // is a two-column flex row that would squeeze the pictures into a third.
-  // A binary file's body is only the "Binary file" row, which the pictures
-  // replace; an SVG keeps its text diff and gets the pictures underneath.
+  // The pane follows the body rather than sitting in it, so drawing the body
+  // again (highlighting, expanding) leaves it alone. A binary file's body is
+  // only the "Binary file" note, which the pictures replace; an SVG keeps its
+  // text diff and gets the pictures underneath.
   if (info.binary) body.remove();
   wrapper.appendChild(pane);
 }
@@ -546,7 +718,7 @@ function shaFor(path: string): string { return shas[path] || "worktree"; }
 function applyHideReviewed(): void {
   const on = $hideReviewed.checked;
   document.body.classList.toggle("hide-reviewed", on);
-  const hidden = on ? $diff.querySelectorAll(".d2h-file-wrapper.is-reviewed").length : 0;
+  const hidden = on ? $diff.querySelectorAll(".dw-file.is-reviewed").length : 0;
   $hideReviewed.parentElement!.title = hidden ? `${hidden} reviewed files hidden` : "";
   refreshKeys();
 }

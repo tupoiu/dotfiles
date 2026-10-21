@@ -6,7 +6,8 @@
      data-base="{{ base }}"
      data-start="{{ start }}"
      data-end="{{ end }}"
-     data-live="{{ 1 if features.live_reload else 0 }}">
+     data-live="{{ 1 if features.live_reload else 0 }}"
+     data-highlight-max="{{ max_highlight_bytes }}">
   <div class="control-row">
   <span class="wt-name">{{ wt.name }} <span class="branch">{{ wt.branch }}</span>
     {%- if pr and pr.pr %}<a href="{{ pr.pr.url }}" target="_blank" rel="noopener"
@@ -87,6 +88,8 @@
 <div id="diff"></div>
 {% endblock %}
 {% block scripts %}
-<script src="{{ asset('vendor/diff2html-ui.min.js') }}"></script>
+<script src="{{ asset('vendor/highlight.min.js') }}"></script>
+<script src="{{ asset('vendor/highlight-nix.min.js') }}"></script>
+<script src="{{ asset('vendor/diff.min.js') }}"></script>
 <script src="{{ asset('dist/worktree.js') }}"></script>
 {% endblock %}

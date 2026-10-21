@@ -74,7 +74,7 @@ for (const scheme of ["light", "dark"] as const) {
     await page.goto(base + path, { waitUntil: "networkidle" });
     // Diff pages render client-side; wait for the decoration pass to finish.
     await page
-      .waitForFunction(() => document.querySelectorAll(".d2h-file-wrapper .chevron").length > 0, { timeout: 4000 })
+      .waitForFunction(() => document.querySelectorAll(".dw-file .chevron").length > 0, { timeout: 4000 })
       .catch(() => {});
     const name = path === "/" ? "catalog" : path.replace(/[^\w]+/g, "-").replace(/^-|-$/g, "");
     const file = `${out}/${name}-${scheme}.png`;

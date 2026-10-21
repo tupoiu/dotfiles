@@ -4,18 +4,20 @@ set -euo pipefail
 cd "$(dirname "$0")"
 # --vendor-only skips `bun install`; the wheel build (hatch_build.py) uses it.
 cd static/vendor
-D2H=3.4.51
 HLJS=11.9.0
-curl -fsSL -o diff2html.min.css   "https://cdn.jsdelivr.net/npm/diff2html@${D2H}/bundles/css/diff2html.min.css"
-curl -fsSL -o diff2html-ui.min.js "https://cdn.jsdelivr.net/npm/diff2html@${D2H}/bundles/js/diff2html-ui.min.js"
-# The core bundle is not used by the page; it runs under bun, which lets the
-# tests assert on real rendered output without a browser.
-curl -fsSL -o diff2html.min.js    "https://cdn.jsdelivr.net/npm/diff2html@${D2H}/bundles/js/diff2html.min.js"
+JSDIFF=7.0.0
+# The page loads these with <script> tags, which put `hljs` and `Diff` on
+# window. Both bundles are also CommonJS, so the bun tests require() the same files.
+curl -fsSL -o highlight.min.js     "https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@${HLJS}/highlight.min.js"
+# Not in the "common" set, and this repo is full of it.
+curl -fsSL -o highlight-nix.min.js "https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@${HLJS}/languages/nix.min.js"
+curl -fsSL -o diff.min.js          "https://cdn.jsdelivr.net/npm/diff@${JSDIFF}/dist/diff.min.js"
 curl -fsSL -o highlight-light.min.css "https://cdn.jsdelivr.net/npm/highlight.js@${HLJS}/styles/github.min.css"
 curl -fsSL -o highlight-dark.min.css  "https://cdn.jsdelivr.net/npm/highlight.js@${HLJS}/styles/github-dark.min.css"
-echo "vendored diff2html ${D2H} + highlight.js ${HLJS} into $(pwd)"
+# diff2html is no longer used; drop what an older run left behind.
+rm -f diff2html.min.css diff2html-ui.min.js diff2html.min.js
+echo "vendored highlight.js ${HLJS} + jsdiff ${JSDIFF} into $(pwd)"
 [[ "${1:-}" == --vendor-only ]] && exit 0
 cd ../..
-# The type checker and playwright (package.json). diff2html is in there only
-# for its types, pinned to the same version as D2H above: bump both together.
+# The type checker and playwright (package.json).
 bun install

@@ -44,6 +44,9 @@ class Limits(BaseModel):
 
     max_inline_diff_bytes: int = 1_500_000
     max_inline_files: int = 300
+    # Above this, a file is not highlighted whole; its lines are highlighted one
+    # by one instead, and the expanders still work.
+    max_highlight_bytes: int = 1_000_000
 
 
 class Noise(BaseModel):

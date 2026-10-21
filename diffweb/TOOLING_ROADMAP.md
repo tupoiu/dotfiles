@@ -22,6 +22,39 @@ Format - one entry per session, newest first:
 
 ---
 
+## 2026-10-14 - own diff renderer and expand-context buttons
+- A Playwright script in the scratchpad that clicks the expanders, toggles
+  side-by-side and appends to a file for live reload - helped most. It found
+  the one real bug (expansions gone for a moment after every redraw, because
+  the file text was fetched again) and a clipped button in side-by-side.
+  `poe diffweb-shot` only loads pages, so it could not see either.
+  **Improve:** a `--script FILE` flag on `shot.ts` that runs steps against the
+  page before each screenshot, so these scripts live in the repo.
+- A second server on port 8799 with its own config, killed by its saved PID -
+  helped, and no `pkill` by pattern.
+- `bun test` with the vendored UMD bundles `require()`d into `globalThis` -
+  helped: the renderer is tested against the same jsdiff and highlight.js the
+  page loads, with no DOM. The old `render_order.ts` route through Python is
+  slow to write against; the new tests are plain `bun test`.
+- A sub-agent porting diff2html's parser tests from a clone, told to write
+  expectations from git's format and not from our output - helped. It found two
+  diff2html inputs whose hunk counts are wrong.
+
+## 2026-10-12 - packaging diffweb for `uv tool install`
+- `uv tool install` into an `env -i HOME=<tmp>` shell - helped most. It is the
+  only check that shows what a colleague gets: no bun, no dotfiles venv, a
+  different Python (3.11). It found that hatch's `only-include` takes no globs,
+  so the first wheel had no `app.py`. **Improve:** a `poe diffweb-wheel-check`
+  that builds the wheel from `git ls-files` into a temp dir, installs it like
+  this and hits `/healthz`.
+- `poe diffweb-shot` - helped against the installed copy. But `--base URL` is
+  not a flag, and it went to the default port without a complaint.
+  **Improve:** reject flags it does not know.
+- `monkeypatch.delenv(raising=False)` on an unset variable records nothing,
+  so the env vars that `apply_args` set leaked into later tests (10 failures
+  far from the cause). **Improve:** nothing in the tool; the tests now set,
+  then delete.
+
 ## 2026-10-07 - the HUD (`/hud`)
 
 - `gh api graphql` by hand, before writing any code - helped most. Probing
@@ -40,6 +73,12 @@ Format - one entry per session, newest first:
 - A second instance for real data - a `pkill -f "python -m diffweb"` to restart
   it also matched the shell that ran it. **Improve:** keep the PID (`$!`) and
   kill that; never kill by pattern while `poe diffweb-dev` may be running.
+- `poe diffweb-dev`'s reload - a config change needs a restart, and touching a
+  `.py` file to force one hung the server for minutes: the old worker waits
+  for every open connection to close, and an open worktree tab's SSE stream
+  never closes. The port stays open, so requests hang instead of failing.
+  **Improve:** pass `timeout_graceful_shutdown` to uvicorn, or end the SSE
+  loop on shutdown.
 
 ## 2026-10-07 - page scripts from JavaScript to TypeScript (bun)
 - `poe diffweb-shot` - helped, once it ran. Chromium would not start: two

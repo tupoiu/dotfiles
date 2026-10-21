@@ -1,7 +1,7 @@
 """Build hook: put the browser assets into the wheel.
 
 Both asset folders are gitignored, so a build from a clean checkout makes them:
-- static/vendor/ - diff2html and highlight.js, from fetch-assets.sh.
+- static/vendor/ - highlight.js and jsdiff, from fetch-assets.sh.
 - static/dist/ - the page scripts, bundled from web/*.ts by `bun run build`.
 
 A build from an sdist already has both, so it needs neither bun nor the
@@ -21,8 +21,9 @@ WEB = HERE / "web"
 DIST = HERE / "static" / "dist"
 VENDOR = HERE / "static" / "vendor"
 VENDORED = [
-    "diff2html.min.css",
-    "diff2html-ui.min.js",
+    "highlight.min.js",
+    "highlight-nix.min.js",
+    "diff.min.js",
     "highlight-light.min.css",
     "highlight-dark.min.css",
 ]

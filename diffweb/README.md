@@ -3,8 +3,8 @@
 A local web UI for reviewing your own in-progress work across git worktrees.
 
 One page lists every worktree it can find; click one and you get the diff against
-the merge base with its base branch, rendered with [diff2html], with a start/end
-commit picker so you can narrow to a single commit or any range.
+the merge base with its base branch, with a start/end commit picker so you can
+narrow to a single commit or any range.
 
 It is deliberately read-only and single-user: it binds `127.0.0.1`, shells out to
 `git`, and never writes to your repos.
@@ -47,7 +47,7 @@ and never writes to them. Its only network use is `gh`.
 
 ```console
 $ uv sync                     # installs the server into the project venv
-$ poe fetch-diffweb-assets    # one-off: vendors diff2html + highlight.js, bun-installs the dev tools
+$ poe fetch-diffweb-assets    # one-off: vendors highlight.js + jsdiff, bun-installs the dev tools
 $ poe diffweb                 # builds the page scripts, then serves http://127.0.0.1:8765
 ```
 
@@ -175,12 +175,12 @@ file's current blob sha, so when the file changes afterwards it reopens badged
 **Structural diff** (`features.structural: true`). Renders the range from
 [difftastic]'s verdict instead of git's - far better for reorderings and
 refactors, and a pure reformat becomes *File without changes*. It is drawn by
-the same diff2html renderer as the line view, so collapsing, review ticks,
+the same renderer as the line view, so collapsing, review ticks,
 side-by-side, both themes and the keyboard all work: the server runs `git diff
 --ext-diff` with `difft --display json`, and `structural.py` splices that into
 git's own patch as ordinary unified diff text. A line difftastic calls unchanged
 (reindented, rewrapped) is context, shown in its *after* spelling; a line it
-calls changed is a `-`/`+` pair with diff2html's word highlighting. Files it has
+calls changed is a `-`/`+` pair with word-level highlighting. Files it has
 no view on - new, deleted, binary - keep git's hunks, so renames, mode changes
 and image panes are untouched. The `+`/`−` counts in headers and the summary
 are still git's numstat, so a reformat-only file reads `+5 −4` over an empty
@@ -210,11 +210,24 @@ being missing, unauthenticated or offline is indistinguishable from "there is no
 PR", which is exactly why the chip shows its age instead of claiming freshness.
 
 **Changed lines are grouped.** Git emits a hunk as all its removals then all its
-additions; diff2html's `matching` option pairs each removal with an addition and
-renders `-,+,-,+` instead. Two related removals followed by their two
-replacements read better, so `matching` is `none` - which costs nothing, as the
-inline word-level highlighting survives it. The options live in
-`web/render-options.ts` so the tests bind to what actually ships.
+additions, and the page keeps that order: two related removals followed by their
+two replacements read better than `-,+,-,+`. Side-by-side puts the first removal
+next to the first addition, and so on. Within such a pair, jsdiff marks the
+words that changed; a pair with little in common gets no marks.
+
+**Expand context.** Between hunks, the header row has buttons like GitHub's:
+`↓` shows 30 more lines under the hunk above, `↑` 30 more over the hunk below,
+and `↕` the whole gap (one button when 30 lines or fewer are hidden). Before the
+first hunk there is only `↑`, after the last only `↓`. A gap opened all the way
+joins its two hunks. Expansions survive a redraw (side-by-side, live reload) and
+are dropped for a file whose blob changed. Only the line diff has them, not the
+structural or the remerge diff. See `INTENT-expand-context.md`.
+
+**Highlighting.** Each side of a file is highlighted whole with highlight.js
+and cut into lines, so the middle of a multi-line string or comment is coloured
+as one. The page draws plain text first and fetches a file's two sides from
+`/api/w/{id}/text` when the file comes near the viewport. Above
+`limits.max_highlight_bytes` (1 MB) the lines are highlighted one by one instead.
 
 **Keyboard.** `j`/`k` move between files (skipping any hidden by *hide reviewed*), `g`/`G` jump to first/last, `o` (or
 Enter) collapses the focused file, `v` marks it reviewed, `c` collapses or
@@ -223,8 +236,8 @@ expands everything, `s` toggles side-by-side, `t` hides or shows test files, and
 stay out of the way while you are typing in the base-ref box or a commit select.
 
 File headers stick below the toolbar as you scroll, so you always know which
-file you are looking at - this reuses diff2html's own `stickyFileHeaders`,
-overridden only to offset it past our toolbar.
+file you are looking at. The offset follows the toolbar's height, which changes
+when it wraps.
 **Noise control.** Lockfiles, generated code and snapshots are real changes that
 are almost never worth reading. Anything matching `noise.collapse_by_default`
 starts collapsed and wears a `generated` badge - but only the first time that file
@@ -240,7 +253,7 @@ page re-renders in place keeping your scroll position.
 
 **Profiling** (`features.profiling`). `/profiles`, linked from the catalog
 header, lists recent renders newest first with a stage bar: ref resolution,
-`git diff`, numstat, blob shas, serialisation, network, and diff2html render.
+`git diff`, numstat, blob shas, serialisation, network, and render.
 The last two are measured by the page and posted back, because the wait the user
 complains about is mostly not the server's - on a 9-file branch it is roughly
 120ms of git and 95ms of rendering. Profiles land in `profile_log` as JSONL,
@@ -287,8 +300,10 @@ are. The code is in `hud/`, apart from the diff viewer.
 - **code-server + GitLens** - nothing was running on this VM to spike against, so
   this is untested rather than rejected. It would be per-repo regardless, not a
   cross-worktree catalog.
-- **diff2html** itself is the renderer here, so its appearance is the baseline
-  rather than a competitor.
+- **[diff2html]** drew the diff until diffweb needed to put rows *inside* its
+  tables for the expanders. diffweb now has its own parser and renderer
+  (`web/diff/`); diff2html's parser test inputs live on in
+  `tests/diffweb_parse.test.ts`, with its MIT notice.
 
 ## Layout
 
@@ -303,10 +318,12 @@ are. The code is in `hud/`, apart from the diff viewer.
 | `web/hud/hud.ts` | the HUD page script: draws every row from `/api/hud` and `/api/hud/details` |
 | `static/favicon.svg` | the diff mark: a rounded square, red half and green half; also the browser icon |
 | `web/*.ts` | the page scripts: one entry per page (`catalog`, `worktree`, `profiles`), bundled by bun into `static/dist/` |
-| `web/render-options.ts` | the diff2html options the page renders with, shared with the tests |
+| `web/diff/parse.ts` | reads git's unified diff into files, hunks and lines |
+| `web/diff/render.ts` | draws parsed files as HTML strings; the gaps and expanders |
+| `web/diff/highlight.ts` | highlight.js over whole files, cut into lines |
 | `web/keys.ts` | keyboard navigation, imported by `worktree.ts` |
 | `static/`, `templates/` | the UI; `static/vendor/` and `static/dist/` are gitignored, populated by `poe fetch-diffweb-assets` and `poe diffweb-build` |
-| `package.json`, `tsconfig.json` | the bun build, plus dev-only tooling: `tsc`, playwright, diff2html's types |
+| `package.json`, `tsconfig.json` | the bun build, plus dev-only tooling: `tsc`, playwright |
 | `shot.ts` | screenshots the running app (see below) |
 
 # Working on diffweb
@@ -389,11 +406,13 @@ fake `gh` answers both GraphQL queries from canned JSON. Two rules, both load-be
 - **The suite runs under `pytest -n 6`**, so no test may mutate shared state, and
   timing assertions must be tolerant (assert `\d+s`, not `0s`).
 
-Some tests shell out to `bun` with diff2html's *core* bundle, which unlike the
-`-ui` bundle needs no DOM, to assert on real rendered HTML without a browser
-(`tests/render_order.ts`, which imports `web/render-options.ts` directly). They
-skip without `poe fetch-diffweb-assets`, so run it or you will think you have
-more coverage than you do. Likewise the asset-stamping test skips without a
+The parser and renderer make HTML strings, so `bun test`
+(`tests/diffweb_parse.test.ts`, `tests/diffweb_render.test.ts`, part of
+`poe diffweb-test`) checks them with no browser. Some Python tests also shell out
+to `bun` (`tests/render_order.ts`) to assert on real rendered rows. Both use the
+vendored jsdiff and highlight.js, and the Python ones skip without
+`poe fetch-diffweb-assets`, so run it or you will think you have more coverage
+than you do. Likewise the asset-stamping test skips without a
 build, and the remerge tests skip on git older than 2.36.
 
 `bun build` strips types without checking them, so `poe diffweb-typecheck`
@@ -422,14 +441,17 @@ The established shape, worth following:
 
 ## Traps this project has already hit
 
-- **diff2html re-orders what git got right.** `matching: "lines"` pairs each
-  deletion with an insertion, rendering `-,+,-,+` where git emitted `-,-,+,+`.
-  Fixed in `render-options.ts`; do not "restore" it for word-level highlighting,
-  which survives `matching: "none"` anyway.
-- **The dark theme is hand-written overrides against diff2html's internal class
-  names** (`app.css`). They are coupled to the vendored version - re-check them
-  when bumping it. Its selectors often carry two classes, so a one-class
-  override of yours will silently lose.
+- **diff2html re-ordered what git got right.** Its `matching: "lines"` paired
+  each deletion with an insertion, rendering `-,+,-,+` where git emitted
+  `-,-,+,+`. The own renderer keeps git's order; do not "restore" pairing in
+  line-by-line for word-level highlighting, which works on the pairs anyway.
+- **Read a hunk by its line counts, not by what a line looks like.** A content
+  line can start with `---`, `+++` or `diff --git`. `parse.ts` stops a hunk when
+  its counts run out.
+- **The text for highlighting and expanding is a second fetch.** On the
+  worktree the file can change between the diff and the text. The renderer
+  checks every highlighted line against the diff's own text, and a file whose
+  text does not match gets no expanders until the next redraw.
 - **`git diff` never reports untracked files**, and `git add -N` is not
   available to us: the app promises it never writes to your repos. When the
   range ends at the working tree, `gitio.untracked_changes` lists them with
@@ -457,14 +479,14 @@ The established shape, worth following:
   may not revalidate at all: the new HTML arrives, the old JS runs, and a new
   control renders but does nothing. Every `/static` URL therefore goes through
   the `asset()` template global, which stamps it with the file's mtime.
-- **Side-by-side's file body is a two-column flex row.** Anything appended
-  *inside* `.d2h-files-diff` becomes a squeezed third column; the image pane
-  is a sibling of the body, after it, and the collapse rule hides it explicitly.
+- **The image pane is a sibling of `.dw-file-body`, not inside it.** Highlighting
+  and expanding draw the body again, which would throw the pane away. The
+  collapse rule hides the pane explicitly.
 - **git names a rename three ways.** `--numstat` says `dir/{old => new}`,
-  `--raw` gives `old\tnew`, and diff2html renders `dir/{old → new}`. File
-  stats, review state and blob shas are keyed on the first two, so the page
-  normalises the header text to the numstat spelling and `rename_target()`
-  turns that into the plain new path.
+  `--raw` gives `old\tnew`, and the parser gives the plain old and new paths.
+  File stats and collapsing are keyed on the numstat spelling (the header
+  shows it with `→`), review state and blob shas on the plain new path, which
+  `rename_target()` gets from the numstat spelling.
 - **difftastic's JSON is behind `DFT_UNSTABLE=yes`** and carries no line text,
   only 0-based line numbers, an `aligned_lines` layout of the whole file and
   the changed lines. Line text comes from `blob_bytes` for each side; a file
@@ -482,7 +504,7 @@ somebody.
 `../plans/diffweb.md` is the living plan: ticked steps with their verification,
 and a decision log of the surprises. Read the gotchas there before starting.
 
-[diff2html]: https://diff2html.xyz/
 [bun]: https://bun.sh/
 [difftastic]: https://difftastic.wilfred.me.uk/
 [uv]: https://docs.astral.sh/uv/
+[diff2html]: https://diff2html.xyz/

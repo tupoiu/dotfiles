@@ -22,7 +22,7 @@ let cursor = -1;
 export function refresh(): void {
   // "hide reviewed" takes files out of the page; navigation must not land on
   // one, so only what is actually on screen counts.
-  files = [...document.querySelectorAll<HTMLElement>("#diff .d2h-file-wrapper")].filter(
+  files = [...document.querySelectorAll<HTMLElement>("#diff .dw-file")].filter(
     (f) => f.offsetParent !== null,
   );
   if (cursor >= files.length) cursor = files.length - 1;
@@ -33,7 +33,7 @@ function paint(): void {
   // Clear across every wrapper, not just the navigable ones: a file that the
   // reviewed filter has just hidden is no longer in `files` and would keep
   // the class forever.
-  for (const f of document.querySelectorAll("#diff .d2h-file-wrapper.focused")) {
+  for (const f of document.querySelectorAll("#diff .dw-file.focused")) {
     f.classList.remove("focused");
   }
   files[cursor]?.classList.add("focused");
@@ -43,7 +43,7 @@ function focus(index: number): void {
   if (!files.length) return;
   cursor = Math.max(0, Math.min(index, files.length - 1));
   paint();
-  const header = files[cursor]!.querySelector(".d2h-file-header")!;
+  const header = files[cursor]!.querySelector(".dw-file-header")!;
   // Sticky toolbar sits on top, so scroll the header clear of it.
   const top = header.getBoundingClientRect().top + window.scrollY - toolbarHeight() - 8;
   window.scrollTo({ top, behavior: "smooth" });
@@ -65,7 +65,7 @@ function act(name: "toggle" | "review"): void {
   if (!files.length) return;
   if (cursor === -1) cursor = nearestVisible();
   const file = files[cursor]!;
-  if (name === "toggle") file.querySelector<HTMLElement>(".d2h-file-header")!.click();
+  if (name === "toggle") file.querySelector<HTMLElement>(".dw-file-header")!.click();
   if (name === "review") {
     file.querySelector<HTMLElement>(".review-tick input")?.click();
     // The file may have just been filtered away underneath the cursor.

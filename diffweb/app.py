@@ -209,6 +209,7 @@ def worktree_page(
             "features": config.features,
             "difft_available": bool(config.tools.difft_path or shutil.which("difft")),
             "has_test_paths": bool(config.tests.paths),
+            "max_highlight_bytes": config.limits.max_highlight_bytes,
             "pr": forge.status(
                 get_state(),
                 wt.id,
@@ -463,6 +464,28 @@ def api_blob(wt_id: str, rev: str, path: str, config: DiffwebConfig = Depends(ge
         "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
     }
     return Response(content=body, media_type=kind, headers=headers)
+
+
+@app.get("/api/w/{wt_id}/text", response_class=PlainTextResponse)
+def api_text(wt_id: str, rev: str, path: str, config: DiffwebConfig = Depends(get_config)) -> Any:
+    """The whole text of `path` at `rev`, for highlighting and the expanders.
+
+    `rev` is a commit, the index or the worktree. Any text file git can read
+    there is served: the server only listens on localhost and never writes.
+    """
+    wt = find_worktree(wt_id, config)
+    body = gitio.blob_bytes(wt.path, rev, path)
+    if body is None:
+        raise HTTPException(404, f"{path} does not exist at {rev}")
+    # git's own test for binary content.
+    if b"\0" in body[:8000]:
+        raise HTTPException(415, f"{path} is binary")
+    pinned = len(rev) == 40 and all(c in "0123456789abcdef" for c in rev)
+    headers = {
+        "Cache-Control": "public, max-age=31536000, immutable" if pinned else "no-store",
+        "X-Content-Type-Options": "nosniff",
+    }
+    return Response(content=body.decode("utf-8", errors="replace"), media_type="text/plain; charset=utf-8", headers=headers)
 
 
 @app.post("/api/w/{wt_id}/reviewed")

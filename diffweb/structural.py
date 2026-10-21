@@ -1,13 +1,13 @@
-"""Turn difftastic's JSON into a unified diff that diff2html can draw.
+"""Turn difftastic's JSON into a unified diff that the page can draw.
 
 difftastic knows which lines changed *syntactically* and how the two sides line
-up, but it does not know how to draw a web page, and diff2html knows how to draw
+up, but it does not know how to draw a web page, and the page knows how to draw
 a web page but only reads unified diffs. This module is the adapter: git's own
 patch is the base (so renames, mode changes and binaries keep their headers),
 and for every text file difftastic looked at the hunks are rebuilt from its
 verdict. A line difftastic calls unchanged - a reformat, a whitespace shuffle -
 becomes context, shown in its *after* spelling; a line it calls changed becomes
-a `-`/`+` pair, and diff2html's word highlighting does the rest.
+a `-`/`+` pair, and the page's word highlighting does the rest.
 
 difftastic's `--display json` is behind `DFT_UNSTABLE=yes` and emits, per file:
 
@@ -133,7 +133,7 @@ def rows_from_alignment(
     """Walk difftastic's alignment and emit unified-diff rows.
 
     Every real line of each side comes out exactly once, so the line counts a
-    reader (diff2html) derives from the hunk headers are exact. Removals and
+    reader (web/diff/parse.ts) derives from the hunk headers are exact. Removals and
     additions between two unchanged pairs are buffered and flushed as all the
     `-` lines then all the `+` lines, which is how git writes a hunk too.
     """

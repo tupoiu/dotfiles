@@ -2,12 +2,18 @@
   --accent-soft: #eaf1ff;
   --bg: #ffffff; --fg: #1b1f24; --dim: #6a737d; --line: #e3e6ea;
   --accent: #2f6feb; --add: #1a7f37; --del: #cf222e; --panel: #f6f8fa;
+  --add-bg: #e6ffec; --add-num: #ccffd8; --add-word: #abf2bc;
+  --del-bg: #ffebe9; --del-num: #ffd7d5; --del-word: #ffb8b4;
+  --hunk-bg: #ddf4ff; --hunk-fg: #57606a; --expand-hover: #54aeff;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --accent-soft: #16233a;
     --bg: #0e1116; --fg: #d7dde5; --dim: #8b949e; --line: #262c36;
     --accent: #6ea8ff; --add: #3fb950; --del: #f85149; --panel: #161b22;
+    --add-bg: #12261e; --add-num: #173a26; --add-word: #1f5c3a;
+    --del-bg: #2a1618; --del-num: #3d1d21; --del-word: #6e2b31;
+    --hunk-bg: #121d2f; --hunk-fg: #8b949e; --expand-hover: #1f6feb;
   }
 }
 * { box-sizing: border-box; }
@@ -86,13 +92,71 @@ input, select {
 .summary .warn { color: var(--del); }
 .summary .merge-note { color: var(--accent); }
 .summary .merge-note code { font-size: 12px; }
-/* Collapsing and review state, layered on diff2html's own file wrappers.
-   Side-by-side uses .d2h-files-diff, line-by-line uses .d2h-file-diff. */
-.d2h-file-wrapper.collapsed .d2h-file-diff,
-.d2h-file-wrapper.collapsed .d2h-files-diff,
-.d2h-file-wrapper.collapsed .image-diff { display: none; }
-.d2h-file-header { cursor: pointer; }
-.d2h-file-wrapper:has(.review-tick input:checked) .d2h-file-header { opacity: .6; }
+/* The diff itself (web/diff/render.ts). One table per file in both layouts. */
+.dw-file-list { margin-bottom: 12px; color: var(--dim); }
+.dw-file-list summary { cursor: pointer; }
+.dw-file-list ol { margin: 6px 0 0; padding-left: 28px; font-family: ui-monospace, monospace; font-size: 12px; }
+/* No overflow: hidden here, or the sticky header would stop sticking. */
+.dw-file { border: 1px solid var(--line); border-radius: 6px; margin-bottom: 16px; }
+.dw-file-header {
+  position: sticky; top: var(--topbar-h, 41px); z-index: 5;
+  display: flex; align-items: center; gap: 4px; padding: 6px 10px;
+  background: var(--panel); border-bottom: 1px solid var(--line);
+  border-radius: 6px 6px 0 0; cursor: pointer;
+}
+.dw-file.collapsed .dw-file-header { border-bottom: 0; border-radius: 6px; }
+.dw-file-name { font-family: ui-monospace, monospace; font-size: 12px; font-weight: 600; word-break: break-all; }
+.dw-tag {
+  margin-left: 8px; font-size: 10px; text-transform: uppercase; letter-spacing: .04em;
+  border: 1px solid currentColor; border-radius: 3px; padding: 0 4px;
+}
+.dw-tag-added { color: var(--add); }
+.dw-tag-deleted { color: var(--del); }
+.dw-tag-renamed, .dw-tag-copied { color: var(--accent); }
+.dw-file-body { overflow-x: auto; }
+.dw-info { padding: 8px 12px; color: var(--dim); background: var(--panel); border-bottom: 1px solid var(--line); }
+.dw-info:last-child { border-bottom: 0; }
+
+.dw-diff {
+  width: 100%; border-collapse: collapse; table-layout: fixed;
+  font: 12px/20px ui-monospace, "SF Mono", Menlo, monospace;
+}
+.dw-col-num { width: 52px; }
+.dw-num {
+  padding: 0 8px; text-align: right; vertical-align: top; color: var(--dim);
+  user-select: none; font-variant-numeric: tabular-nums;
+}
+.dw-code { padding: 0 10px 0 22px; white-space: pre-wrap; overflow-wrap: anywhere; position: relative; }
+/* The marker is drawn, not text, so copying lines does not copy it. */
+.dw-code::before { content: attr(data-sign); position: absolute; left: 8px; color: var(--dim); user-select: none; }
+.dw-add { background: var(--add-bg); }
+.dw-del { background: var(--del-bg); }
+.dw-add ins, .dw-del del { text-decoration: none; border-radius: 2px; }
+.dw-add ins { background: var(--add-word); }
+.dw-del del { background: var(--del-word); }
+.dw-unified tr:has(.dw-add) .dw-num { background: var(--add-num); }
+.dw-unified tr:has(.dw-del) .dw-num { background: var(--del-num); }
+.dw-split .dw-num:has(+ .dw-add) { background: var(--add-num); }
+.dw-split .dw-num:has(+ .dw-del) { background: var(--del-num); }
+.dw-split .dw-code + .dw-num { border-left: 1px solid var(--line); }
+.dw-empty { background: var(--panel); }
+.dw-nonl { margin-left: 4px; color: var(--del); user-select: none; }
+
+.dw-hunk td { background: var(--hunk-bg); color: var(--hunk-fg); }
+.dw-hunk-text { padding: 2px 10px; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+.dw-gutter { padding: 0; text-align: center; white-space: nowrap; vertical-align: middle; }
+.dw-expand {
+  font: inherit; font-size: 14px; line-height: 20px; min-width: 28px; padding: 0 4px; margin: 0;
+  border: 0; background: none; color: var(--hunk-fg); cursor: pointer;
+}
+.dw-expand:hover { background: var(--expand-hover); color: #fff; }
+/* Side-by-side has one narrow number column per side, so the buttons stack. */
+.dw-split .dw-expand { display: block; width: 100%; }
+
+/* Collapsing and review state, on our own file wrappers. */
+.dw-file.collapsed .dw-file-body,
+.dw-file.collapsed .image-diff { display: none; }
+.dw-file:has(.review-tick input:checked) .dw-file-header { opacity: .6; }
 
 .chevron {
   flex: none; width: 16px; height: 16px; margin-right: 2px; padding: 0;
@@ -103,7 +167,7 @@ input, select {
   border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
   transform: rotate(45deg); transition: transform .12s ease;
 }
-.d2h-file-wrapper.collapsed .chevron::before { transform: rotate(-45deg); margin-top: 6px; }
+.dw-file.collapsed .chevron::before { transform: rotate(-45deg); margin-top: 6px; }
 
 /* Image diffs: both sides of a picture, side by side, on a checkerboard so
    transparency reads as transparency rather than as the page background. */
@@ -134,40 +198,6 @@ input, select {
                color: var(--dim); font-size: 11px; cursor: pointer; }
 .badge-changed { color: var(--del); font-size: 11px; margin-left: 8px; }
 
-/* diff2html ships a light-only stylesheet, so recolour it for dark mode.
-   Selectors mirror the ones in vendor/diff2html.min.css. */
-@media (prefers-color-scheme: dark) {
-  .d2h-wrapper, .d2h-file-wrapper, .d2h-files-diff, .d2h-file-side-diff,
-  .d2h-code-wrapper, .d2h-diff-table { background: var(--bg); color: var(--fg); }
-  .d2h-file-wrapper, .d2h-file-list-wrapper, .d2h-file-header,
-  .d2h-code-linenumber, .d2h-code-side-linenumber, .d2h-diff-tbody > tr > td {
-    border-color: var(--line);
-  }
-  .d2h-file-header, .d2h-file-list-header, .d2h-file-list-wrapper { background: var(--panel); }
-  .d2h-file-name, .d2h-file-list-title, .d2h-file-list a { color: var(--fg); }
-  .d2h-code-line-ctn, .d2h-code-line, .d2h-code-side-line { color: var(--fg); }
-  .d2h-code-linenumber, .d2h-code-side-linenumber { background: var(--panel); color: var(--dim); }
-
-  .d2h-ins { background: #12261e; border-color: #1d3b2a; }
-  .d2h-ins.d2h-change { background: #14231c; }
-  .d2h-del { background: #2a1618; border-color: #48232a; }
-  .d2h-del.d2h-change { background: #23181a; }
-  .d2h-info { background: var(--panel); color: var(--dim); border-color: var(--line); }
-  .d2h-ins ins, .d2h-ins ins.d2h-change { background: #1f5c3a; color: #d7ffe6; }
-  .d2h-del del, .d2h-del del.d2h-change { background: #6e2b31; color: #ffe3e3; }
-  .d2h-emptyplaceholder, .d2h-cntx { background: var(--bg); border-color: var(--line); }
-  .d2h-code-line del, .d2h-code-side-line del { background: #6e2b31; }
-  .d2h-code-line ins, .d2h-code-side-line ins { background: #1f5c3a; }
-  .d2h-tag { background: var(--panel); }
-  .d2h-changed-tag { border-color: #9e6a03; color: #d29922; }
-  .d2h-added-tag { border-color: #1d3b2a; color: var(--add); }
-  .d2h-deleted-tag { border-color: #48232a; color: var(--del); }
-  .d2h-moved-tag { border-color: var(--line); color: var(--accent); }
-}
-
-/* Our own table must not inherit diff2html's generic table borders. */
-.catalog, .catalog tr, .catalog td, .catalog th { border-left: 0; border-right: 0; }
-
 .linkish {
   background: none; border: 0; padding: 0; font: inherit;
   color: var(--accent); cursor: pointer;
@@ -190,18 +220,8 @@ input, select {
 
 /* Review ergonomics: sticky file headers, keyboard focus, help overlay. */
 
-/* diff2html already sticks file headers (its `stickyFileHeaders` option adds
-   .d2h-sticky-header), but pins them at top:0, which puts them under our own
-   sticky toolbar. Reuse its mechanism and just correct the offset - matching
-   its two-class specificity so this wins. */
-.d2h-file-header.d2h-sticky-header {
-  top: var(--topbar-h, 41px);
-  z-index: 5;
-  background: var(--panel);
-}
-
-.d2h-file-wrapper.focused { outline: 2px solid var(--accent); outline-offset: -1px; }
-.d2h-file-wrapper.focused .d2h-file-header { background: var(--accent-soft, var(--panel)); }
+.dw-file.focused { outline: 2px solid var(--accent); outline-offset: -1px; }
+.dw-file.focused .dw-file-header { background: var(--accent-soft, var(--panel)); }
 
 #key-help {
   position: fixed; inset: 0; margin: auto; width: min(420px, 90vw); height: max-content;
@@ -227,7 +247,7 @@ input, select {
   margin-left: 8px; font-size: 10px; text-transform: uppercase; letter-spacing: .04em;
   color: var(--dim); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px;
 }
-body.hide-reviewed .d2h-file-wrapper.is-reviewed { display: none; }
+body.hide-reviewed .dw-file.is-reviewed { display: none; }
 
 /* PR chip extras: how long ago it was opened, or how long ago we last looked. */
 .pr-age { margin-left: 6px; font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
