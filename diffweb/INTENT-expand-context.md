@@ -1,5 +1,9 @@
 # Expand context
 
+> **Written by Claude** (a Claude Code session, 2026-10-14). It is built on the
+> user's answers in "Answers to Claude's questions" at the end. Q8-Q11 were not
+> answered: the decisions for them are Claude's.
+
 GitHub-style buttons in the diff that show the lines between hunks, so you can
 read the code next to a change without leaving the page.
 
@@ -79,4 +83,5 @@ redraw.
 - **Q7 - Word diff:** keep jsdiff for now.
 - **Q8-Q11** (test porting, `/text` scope, huge-file cap, expansions across
   live reload, small gaps): not answered; the user asked for the spec and the
-  build, so Claude's recommendations stand as written above.
+  build, so Claude's recommendations stand as written above. **Claude's
+  decisions, not the user's.**
