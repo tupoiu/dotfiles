@@ -10,7 +10,7 @@ Scratchpad. Add anything, however half-formed - nothing here is committed to.
 
 ## Next up
 
-- Refactor the frontend to use TS instead of JS
+- ~~Refactor the frontend to use TS instead of JS~~
 - ~~Make the "chips" column in the homepage also show when the PR was first made if
   it exists, or if theres "No PR ({refresh emoji} 1m)" or "No PR ({refresh} 2d)".~~
   Done - the 🔄 is clickable and re-asks gh.
