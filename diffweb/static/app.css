@@ -324,6 +324,15 @@ body.hide-reviewed .dw-file.is-reviewed { display: none; }
   background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
 }
 .hud-team { border-style: dashed; }
+.hud-table th:last-child:empty { width: 150px; }
+.hud-actions { text-align: right; white-space: nowrap; }
+.hud-mute {
+  font: inherit; font-size: 11px; color: var(--dim); cursor: pointer; margin-left: 4px;
+  background: none; border: 1px solid var(--line); border-radius: 4px; padding: 0 6px;
+}
+.hud-mute:hover { color: var(--accent); border-color: currentColor; }
+.hud-muted summary { cursor: pointer; }
+.hud-muted[hidden] { display: none; }
 .hud-error {
   color: var(--del); border: 1px solid currentColor; border-radius: 6px; padding: 6px 10px;
 }

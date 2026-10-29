@@ -136,6 +136,9 @@ def overview(state: State, config: DiffwebConfig, mode: Mode = "cached", today: 
         mode,
         lambda: github.overview(hud.repos, cutoff, hud.limit, config.tools.gh_path, hud.timeout_seconds),
     )
+    # Mutes are mine, not GitHub's: they are read on every request, so a mute
+    # shows at once and ends on time, whatever the age of the PRs.
+    result["muted"] = state.hud_mutes()
     # Worktrees come and go between refreshes, so they are matched on every
     # request rather than stored with the PRs.
     if result["data"]:
@@ -144,6 +147,20 @@ def overview(state: State, config: DiffwebConfig, mode: Mode = "cached", today: 
             for pr in section["prs"]:
                 pr["worktree"] = local.get((pr["repo"].lower(), pr["branch"]))
     return result
+
+
+# The page offers an hour and a day. Anything up to a week is allowed, so a
+# third button needs no server change.
+MAX_MUTE_SECONDS = 7 * 24 * 3600
+
+
+def mute(state: State, pr_id: str, seconds: int) -> dict[str, float]:
+    """Mute a PR in "Waiting for my review" for `seconds`; 0 unmutes it."""
+    if seconds == 0:
+        state.unmute_hud_pr(pr_id)
+    else:
+        state.mute_hud_pr(pr_id, time.time() + seconds)
+    return state.hud_mutes()
 
 
 def details(state: State, config: DiffwebConfig, mode: Mode = "cached", today: date | None = None) -> dict[str, Any]:

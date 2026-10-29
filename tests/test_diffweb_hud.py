@@ -398,6 +398,7 @@ def test_hud_page_and_header_link(client: TestClient) -> None:
     assert 'id="section-mine"' in page.text and "dist/hud/hud.js" in page.text
     # Each section says it is loading until the script fills it in.
     assert page.text.count('class="empty hud-loading">Loading&hellip;') == 5
+    assert 'id="review-muted" hidden' in page.text
     assert 'class="topnav current" href="/hud"' in page.text
     # Every page links to it, not only the catalog.
     assert 'href="/hud">HUD</a>' in client.get("/").text
@@ -411,6 +412,34 @@ def test_hud_api(client: TestClient, tmp_path: Path) -> None:
     client.get("/api/hud?mode=force")
     assert len(calls(tmp_path, "overview")) == 2
     assert client.get("/api/hud?mode=bogus").status_code == 422
+
+
+def test_mute_and_unmute(client: TestClient, tmp_path: Path) -> None:
+    assert client.get("/api/hud").json()["muted"] == {}
+    got = client.post("/api/hud/mute", params={"pr": "PR_5", "seconds": 3600}).json()
+    assert got["muted"]["PR_5"] == pytest.approx(time.time() + 3600, abs=5)
+    # Every overview carries the mutes, cached or not, and they cost no gh call.
+    before = len(calls(tmp_path))
+    assert set(client.get("/api/hud").json()["muted"]) == {"PR_5"}
+    assert len(calls(tmp_path)) == before
+    assert client.post("/api/hud/mute", params={"pr": "PR_5", "seconds": 0}).json()["muted"] == {}
+
+
+def test_mute_limits(client: TestClient) -> None:
+    assert client.post("/api/hud/mute", params={"pr": "PR_5", "seconds": 8 * 86400}).status_code == 422
+    assert client.post("/api/hud/mute", params={"pr": "PR_5", "seconds": -1}).status_code == 422
+    assert client.post("/api/hud/mute", params={"pr": "", "seconds": 60}).status_code == 422
+
+
+def test_expired_mutes_are_dropped(tmp_path: Path) -> None:
+    state = State(tmp_path / "s.db")
+    state.mute_hud_pr("PR_1", 1000.0)
+    state.mute_hud_pr("PR_2", 2000.0)
+    assert state.hud_mutes(now=1500.0) == {"PR_2": 2000.0}
+    # Deleted, not only hidden: a mute that has run out never comes back.
+    assert state.hud_mutes(now=0.0) == {"PR_2": 2000.0}
+    state.mute_hud_pr("PR_2", 3000.0)  # muting again moves the end
+    assert state.hud_mutes(now=1500.0) == {"PR_2": 3000.0}
 
 
 def test_hud_is_absent_when_disabled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake_gh: Path,

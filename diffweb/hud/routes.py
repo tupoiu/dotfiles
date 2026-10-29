@@ -1,11 +1,11 @@
-"""HUD routes: the page shell, and the two JSON endpoints it fills itself from."""
+"""HUD routes: the page shell, the two JSON endpoints it fills itself from, and mutes."""
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Callable
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
@@ -41,5 +41,10 @@ def make_router(
     @router.get("/api/hud/details")
     def api_details(mode: service.Mode = "cached", config: DiffwebConfig = Depends(enabled)) -> Any:
         return service.details(get_state(), config, mode)
+
+    @router.post("/api/hud/mute")
+    def api_mute(pr: str = Query(min_length=1), seconds: int = Query(ge=0, le=service.MAX_MUTE_SECONDS),
+                 config: DiffwebConfig = Depends(enabled)) -> Any:
+        return {"muted": service.mute(get_state(), pr, seconds)}
 
     return router

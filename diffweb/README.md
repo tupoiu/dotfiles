@@ -270,6 +270,10 @@ across the configured repos, linked from the header of every page:
   ready-for-review first, with drafts in their own list below. Team requests
   (often from CODEOWNERS) are left out on purpose, or this would list every PR
   the team owns.
+  Each row has *mute 1h* and *mute 1d*: a muted PR moves into a collapsed
+  *Muted* list at the end of the section, which says when it comes back and has
+  an *unmute*. Mutes are kept in the state DB, keyed by GitHub's PR id, and
+  dropped once they run out.
 - *Recently reviewed*: other people's PRs, open or closed, that I reviewed on or
   after the same date as *Closed or merged since*. Newest review first, with my
   latest review (`approved 3h ago`, `commented 1d ago`). A PR that waits for my

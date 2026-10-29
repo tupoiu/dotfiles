@@ -59,6 +59,9 @@ interface Loaded<T> {
   error: string | null;
 }
 
+// PR node id -> when its mute ends (unix seconds). Sent with every overview.
+type Mutes = Record<string, number>;
+
 // Matches forge.REFRESH_AFTER_SECONDS: poll no faster than the server
 // considers an answer stale.
 const POLL_SECONDS = 120;
@@ -70,6 +73,7 @@ const refreshButton = document.getElementById("hud-refresh")!;
 
 let overview: Loaded<Overview> | null = null;
 let details: Record<string, Detail> = {};
+let muted = new Map<string, number>();
 let lastPoll = 0;
 
 function age(seconds: number): string {
@@ -185,7 +189,7 @@ function applyDetails(): void {
   }
 }
 
-const NUMERIC_HEADERS = new Set(["ready for"]);
+const NUMERIC_HEADERS = new Set(["ready for", "back in"]);
 
 function table(headers: string[], rows: HTMLTableRowElement[]): HTMLTableElement {
   const t = el("table", "catalog hud-table");
@@ -246,6 +250,28 @@ function myReview(pr: Pr): string {
   return r?.at ? `${what} ${since(r.at)} ago` : what;
 }
 
+const isMuted = (pr: Pr) => (muted.get(pr.id) ?? 0) > Date.now() / 1000;
+
+function actionCell(...buttons: HTMLButtonElement[]): HTMLTableCellElement {
+  const cell = el("td", "hud-actions");
+  cell.append(...buttons);
+  return cell;
+}
+
+// `seconds` 0 unmutes.
+function muteButton(pr: Pr, seconds: number, label: string, title: string): HTMLButtonElement {
+  const button = el("button", "hud-mute", label);
+  button.type = "button";
+  button.title = title;
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    const got = await postJson<{ muted: Mutes }>(`/api/hud/mute?${new URLSearchParams({ pr: pr.id, seconds: String(seconds) })}`);
+    if (got) muted = new Map(Object.entries(got.muted));
+    render();
+  });
+  return button;
+}
+
 const newestFirst = (key: "updated_at" | "closed_at") => (a: Pr, b: Pr) => (b[key] ?? 0) - (a[key] ?? 0);
 const oldestFirst = (key: "ready_at" | "created_at") => (a: Pr, b: Pr) => (a[key] ?? 0) - (b[key] ?? 0);
 
@@ -280,12 +306,32 @@ function render(): void {
       el("td", "num", pr.status === "draft" ? "draft" : since(pr.ready_at)),
       lazyCell("activity", pr),
     );
-  const headers = ["pr", "author", "ready for", "last activity"];
-  const ready = review.prs.filter((p) => p.status !== "draft").sort(oldestFirst("ready_at"));
-  const drafts = review.prs.filter((p) => p.status === "draft").sort(oldestFirst("created_at"));
-  flat(document.getElementById("section-review")!, ready, headers, reviewRow);
-  flat(document.getElementById("section-review-drafts")!, drafts, headers, reviewRow);
-  count("count-review", review.prs.length, review.total);
+  const headers = ["pr", "author", "ready for", "last activity", ""];
+  const waiting = review.prs.filter((p) => !isMuted(p));
+  const ready = waiting.filter((p) => p.status !== "draft").sort(oldestFirst("ready_at"));
+  const drafts = waiting.filter((p) => p.status === "draft").sort(oldestFirst("created_at"));
+  const withMute = (pr: Pr) => {
+    const tr = reviewRow(pr);
+    tr.append(actionCell(muteButton(pr, 3600, "mute 1h", "Mute for 1 hour"), muteButton(pr, 86400, "mute 1d", "Mute for 1 day")));
+    return tr;
+  };
+  flat(document.getElementById("section-review")!, ready, headers, withMute);
+  flat(document.getElementById("section-review-drafts")!, drafts, headers, withMute);
+  const mutedPrs = review.prs.filter(isMuted).sort((a, b) => muted.get(a.id)! - muted.get(b.id)!);
+  // A <details> that stays in the page, so a redraw does not close it.
+  document.getElementById("review-muted")!.hidden = !mutedPrs.length;
+  // The same columns as above, so the tables line up.
+  flat(document.getElementById("section-review-muted")!, mutedPrs, ["pr", "author", "back in", "last activity", ""], (pr) =>
+    row(
+      prCell(pr, true),
+      el("td", "dim", pr.author ?? "?"),
+      el("td", "num", age(muted.get(pr.id)! - Date.now() / 1000)),
+      lazyCell("activity", pr),
+      actionCell(muteButton(pr, 0, "unmute", "Show it in Waiting for my review again")),
+    ),
+  );
+  count("count-muted", mutedPrs.length, mutedPrs.length);
+  count("count-review", waiting.length, review.total - mutedPrs.length);
 
   // The server sends these newest review first.
   flat(
@@ -327,6 +373,15 @@ async function getJson<T>(url: string): Promise<T | null> {
   }
 }
 
+async function postJson<T>(url: string): Promise<T | null> {
+  try {
+    const r = await fetch(url, { method: "POST" });
+    return r.ok ? ((await r.json()) as T) : null;
+  } catch {
+    return null;
+  }
+}
+
 async function loadDetails(mode: string): Promise<void> {
   const got = await getJson<Loaded<Record<string, Detail>>>(`/api/hud/details?mode=${mode}`);
   if (!got?.data) return;
@@ -337,9 +392,10 @@ async function loadDetails(mode: string): Promise<void> {
 
 async function load(mode: "cached" | "fresh" | "force"): Promise<void> {
   lastPoll = Date.now();
-  const got = await getJson<Loaded<Overview>>(`/api/hud?mode=${mode}`);
+  const got = await getJson<Loaded<Overview> & { muted?: Mutes }>(`/api/hud?mode=${mode}`);
   if (got) {
     overview = got;
+    muted = new Map(Object.entries(got.muted ?? {}));
     render();
     showStatus();
   }
@@ -373,6 +429,8 @@ document.addEventListener("visibilitychange", maybePoll);
 setInterval(() => {
   maybePoll();
   showStatus();
+  // A mute that has run out puts its PR back, and the "back in" times move on.
+  if (muted.size) render();
 }, 15_000);
 
 void load("cached");

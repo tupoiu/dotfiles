@@ -31,6 +31,10 @@ CREATE TABLE IF NOT EXISTS cache (
     payload    TEXT NOT NULL, -- JSON
     checked_at REAL NOT NULL  -- unix time
 );
+CREATE TABLE IF NOT EXISTS hud_mutes (
+    pr_id TEXT PRIMARY KEY,   -- GitHub's node id
+    until REAL NOT NULL       -- unix time
+);
 """
 
 
@@ -113,6 +117,29 @@ class State:
                 "checked_at = excluded.checked_at",
                 (key, json.dumps(payload), checked_at),
             )
+            self._conn.commit()
+
+    def hud_mutes(self, now: float | None = None) -> dict[str, float]:
+        """PR node id -> when its HUD mute ends. Expired mutes are deleted."""
+        now = time.time() if now is None else now
+        with self._lock:
+            self._conn.execute("DELETE FROM hud_mutes WHERE until <= ?", (now,))
+            self._conn.commit()
+            rows = self._conn.execute("SELECT pr_id, until FROM hud_mutes").fetchall()
+        return {r["pr_id"]: r["until"] for r in rows}
+
+    def mute_hud_pr(self, pr_id: str, until: float) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO hud_mutes (pr_id, until) VALUES (?, ?) "
+                "ON CONFLICT(pr_id) DO UPDATE SET until = excluded.until",
+                (pr_id, until),
+            )
+            self._conn.commit()
+
+    def unmute_hud_pr(self, pr_id: str) -> None:
+        with self._lock:
+            self._conn.execute("DELETE FROM hud_mutes WHERE pr_id = ?", (pr_id,))
             self._conn.commit()
 
     def reviewed(self, worktree: str) -> dict[str, str]:
