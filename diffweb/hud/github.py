@@ -2,8 +2,9 @@
 
 Two queries, so the page can paint before the slow part is known:
 
-- `overview`: three aliased searches in one request - my open PRs, my PRs
-  closed since a cutoff, and the open PRs that request my review.
+- `overview`: four aliased searches in one request - my open PRs, my PRs
+  closed since a cutoff, the open PRs that request my review, and the PRs I
+  reviewed since the cutoff.
 - `details`: per-PR review state and recent activity, by node id.
 
 Everything returned is plain JSON-able dicts, because it goes straight into the
@@ -15,7 +16,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Any
 
 # The fields the first paint needs. `ready` is here and not in the details: the
@@ -31,15 +32,20 @@ fragment pr on PullRequest {
     nodes { ... on ReadyForReviewEvent { createdAt } }
   }
 }
+
+fragment reviews on PullRequest {
+  latestReviews(first: 50) { nodes { author { login } state submittedAt } }
+}
 """
 
 OVERVIEW_QUERY = (
     """
-query($mine: String!, $closed: String!, $review: String!, $limit: Int!) {
+query($mine: String!, $closed: String!, $review: String!, $reviewed: String!, $limit: Int!) {
   viewer { login }
   mine: search(query: $mine, type: ISSUE, first: $limit) { issueCount nodes { ...pr } }
   closed: search(query: $closed, type: ISSUE, first: $limit) { issueCount nodes { ...pr } }
   review: search(query: $review, type: ISSUE, first: $limit) { issueCount nodes { ...pr } }
+  reviewed: search(query: $reviewed, type: ISSUE, first: $limit) { issueCount nodes { ...pr ...reviews } }
 }
 """
     + _PR_FIELDS
@@ -122,7 +128,7 @@ def workday_cutoff(today: date, workdays: int) -> date:
 
 
 def search_strings(repos: list[str], cutoff: date) -> dict[str, str]:
-    """The three GitHub searches. `repo:` qualifiers are ORed by GitHub."""
+    """The four GitHub searches. `repo:` qualifiers are ORed by GitHub."""
     scope = " ".join(f"repo:{r}" for r in repos)
     return {
         "mine": f"is:pr is:open author:@me {scope} sort:updated-desc",
@@ -130,6 +136,10 @@ def search_strings(repos: list[str], cutoff: date) -> dict[str, str]:
         # Only direct requests: a team request (often from CODEOWNERS) would
         # list every PR the team owns.
         "review": f"is:pr is:open user-review-requested:@me {scope} sort:created-asc",
+        # Search cannot filter on when I reviewed. A PR I reviewed after the
+        # cutoff was updated after it too, so this finds all of them;
+        # `_reviewed` then drops the ones I reviewed before it.
+        "reviewed": f"is:pr reviewed-by:@me -author:@me updated:>={cutoff.isoformat()} {scope} sort:updated-desc",
     }
 
 
@@ -172,16 +182,39 @@ def _section(data: dict[str, Any], name: str) -> dict[str, Any]:
     return {"total": found.get("issueCount", len(prs)), "prs": prs}
 
 
+def _reviewed(data: dict[str, Any], viewer: str | None, cutoff: date, waiting: set[str]) -> dict[str, Any]:
+    """The PRs whose latest review by me is from the cutoff on, newest first.
+
+    A PR that waits for my review again is in that section, not this one.
+    """
+    since = datetime.combine(cutoff, time()).timestamp()
+    found = data.get("reviewed") or {}
+    nodes = [n for n in found.get("nodes") or [] if n and n.get("id")]
+    prs = []
+    for node in nodes:
+        mine = [r for r in (node.get("latestReviews") or {}).get("nodes") or []
+                if r and (r.get("author") or {}).get("login") == viewer]
+        at = timestamp(mine[0].get("submittedAt")) if mine else None
+        if at is None or at < since or node["id"] in waiting:
+            continue
+        prs.append({**_pr(node), "my_review": {"state": mine[0].get("state"), "at": at}})
+    prs.sort(key=lambda pr: pr["my_review"]["at"], reverse=True)
+    total = found.get("issueCount", len(nodes))
+    # When every match came back, the count is what is left after the filter.
+    # Otherwise GitHub's count is the best there is, and it is an upper bound.
+    return {"total": len(prs) if total <= len(nodes) else total, "prs": prs}
+
+
 def overview(
     repos: list[str], cutoff: date, limit: int, gh_path: str | None, timeout: float
 ) -> dict[str, Any]:
     queries = search_strings(repos, cutoff)
     data = run_graphql(OVERVIEW_QUERY, {**queries, "limit": limit}, gh_path, timeout)
-    return {
-        "viewer": (data.get("viewer") or {}).get("login"),
-        "cutoff": cutoff.isoformat(),
-        "sections": {name: _section(data, name) for name in ("mine", "closed", "review")},
-    }
+    viewer = (data.get("viewer") or {}).get("login")
+    sections = {name: _section(data, name) for name in ("mine", "closed", "review")}
+    waiting = {pr["id"] for pr in sections["review"]["prs"]}
+    sections["reviewed"] = _reviewed(data, viewer, cutoff, waiting)
+    return {"viewer": viewer, "cutoff": cutoff.isoformat(), "sections": sections}
 
 
 def _reviewer(raw: dict[str, Any] | None) -> dict[str, str] | None:

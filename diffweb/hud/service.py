@@ -100,7 +100,9 @@ def _scope(*parts: object) -> str:
 def _overview_scope(config: DiffwebConfig, today: date) -> tuple[str, date]:
     hud = config.hud
     cutoff = github.workday_cutoff(today, hud.closed_workdays)
-    return _scope(sorted(hud.repos), cutoff.isoformat(), hud.limit), cutoff
+    # The last part is the payload's shape: bump it when the sections change, so
+    # an overview stored by an older version is not read as this one.
+    return _scope(sorted(hud.repos), cutoff.isoformat(), hud.limit, "reviewed"), cutoff
 
 
 _GITHUB_REMOTE = re.compile(r"github\.com[:/]+([^/]+/[^/]+?)(?:\.git)?/?$")

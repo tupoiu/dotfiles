@@ -93,7 +93,8 @@ class Hud(BaseModel):
 
     # owner/name. They go into a GitHub search string, so the format is strict.
     repos: list[str] = Field(default_factory=list)
-    # "Closed or merged recently" means within this many workdays (Mon-Fri).
+    # "Closed or merged recently" and "recently reviewed" mean within this many
+    # workdays (Mon-Fri).
     closed_workdays: int = 3
     # Most PRs shown per section; GitHub search pages are at most 100.
     limit: int = Field(default=50, ge=1, le=100)

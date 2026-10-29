@@ -93,7 +93,7 @@ tools:
   gh_timeout_seconds: 5.0
 hud:
   repos: []                # owner/name, e.g. [acme/widgets, acme/gears]
-  closed_workdays: 3       # "closed or merged recently" = within this many Mon-Fri days
+  closed_workdays: 3       # "closed or merged" and "reviewed" recently = within this many Mon-Fri days
   limit: 50                # most PRs per section
   timeout_seconds: 20.0
 state_db: "~/.local/state/diffweb/state.db"
@@ -270,6 +270,12 @@ across the configured repos, linked from the header of every page:
   ready-for-review first, with drafts in their own list below. Team requests
   (often from CODEOWNERS) are left out on purpose, or this would list every PR
   the team owns.
+- *Recently reviewed*: other people's PRs, open or closed, that I reviewed on or
+  after the same date as *Closed or merged since*. Newest review first, with my
+  latest review (`approved 3h ago`, `commented 1d ago`). A PR that waits for my
+  review again is in *Waiting for my review* instead. GitHub search cannot
+  filter on when I reviewed, so the search finds PRs updated since the date,
+  and the server keeps the ones whose latest review by me is from then on.
 
 Each PR has the catalog's chip, linking to GitHub. When a local worktree is
 checked out on the PR's branch (matched on the `origin` remote and the branch
@@ -282,7 +288,7 @@ since" is that list as it is. On my own PRs, `↩ needs your reply` marks a PR
 where a person other than me spoke last and it was not an approval. Bots do not
 count either way.
 
-The data comes from `gh api graphql`: one request with three aliased searches,
+The data comes from `gh api graphql`: one request with four aliased searches,
 then `nodes(ids:)` for the details. Both are stored in the state DB. The page
 paints from what is stored, asks again at once if that is over two minutes old,
 then polls every two minutes while the tab is visible. The refresh glyph asks

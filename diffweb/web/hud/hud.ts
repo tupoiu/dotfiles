@@ -22,6 +22,8 @@ interface Pr {
   updated_at: number | null;
   closed_at: number | null;
   ready_at: number | null;
+  // Only in the "reviewed" section: my latest review of it.
+  my_review?: { state: string | null; at: number | null };
   worktree?: Worktree | null;
 }
 
@@ -33,7 +35,7 @@ interface Section {
 interface Overview {
   viewer: string | null;
   cutoff: string;
-  sections: { mine: Section; closed: Section; review: Section };
+  sections: { mine: Section; closed: Section; review: Section; reviewed: Section };
 }
 
 interface Activity {
@@ -231,13 +233,26 @@ function count(id: string, shown: number, total: number): void {
   document.getElementById(id)!.textContent = total > shown ? `${shown} of ${total}` : String(total);
 }
 
+const REVIEW_STATES: Record<string, string> = {
+  APPROVED: "approved",
+  CHANGES_REQUESTED: "changes requested",
+  COMMENTED: "commented",
+  DISMISSED: "dismissed",
+};
+
+function myReview(pr: Pr): string {
+  const r = pr.my_review;
+  const what = (r?.state && REVIEW_STATES[r.state]) || "reviewed";
+  return r?.at ? `${what} ${since(r.at)} ago` : what;
+}
+
 const newestFirst = (key: "updated_at" | "closed_at") => (a: Pr, b: Pr) => (b[key] ?? 0) - (a[key] ?? 0);
 const oldestFirst = (key: "ready_at" | "created_at") => (a: Pr, b: Pr) => (a[key] ?? 0) - (b[key] ?? 0);
 
 function render(): void {
   const data = overview?.data;
   if (!data) return;
-  const { mine, closed, review } = data.sections;
+  const { mine, closed, review, reviewed } = data.sections;
 
   grouped(
     document.getElementById("section-mine")!,
@@ -271,6 +286,21 @@ function render(): void {
   flat(document.getElementById("section-review")!, ready, headers, reviewRow);
   flat(document.getElementById("section-review-drafts")!, drafts, headers, reviewRow);
   count("count-review", review.prs.length, review.total);
+
+  // The server sends these newest review first.
+  flat(
+    document.getElementById("section-reviewed")!,
+    reviewed.prs,
+    ["pr", "author", "my review", "last activity"],
+    (pr) =>
+      row(
+        prCell(pr, true),
+        el("td", "dim", pr.author ?? "?"),
+        el("td", "dim", myReview(pr)),
+        lazyCell("activity", pr),
+      ),
+  );
+  count("count-reviewed", reviewed.prs.length, reviewed.total);
 
   applyDetails();
 }

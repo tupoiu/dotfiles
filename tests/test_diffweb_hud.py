@@ -37,7 +37,7 @@ ME = "me-login"
 
 def _pr(n: int, repo: str = "acme/widgets", branch: str = "feature", draft: bool = False,
         state: str = "OPEN", ready: str | None = None, updated: str = "2026-10-05T10:00:00Z",
-        author: str = ME) -> dict:
+        author: str = ME, reviews: list[tuple[str, str, str]] = ()) -> dict:
     return {
         "id": f"PR_{n}",
         "number": n,
@@ -53,6 +53,8 @@ def _pr(n: int, repo: str = "acme/widgets", branch: str = "feature", draft: bool
         "repository": {"nameWithOwner": repo},
         "author": {"login": author},
         "ready": {"nodes": [{"createdAt": ready}] if ready else []},
+        "latestReviews": {"nodes": [{"author": {"login": who}, "state": state_, "submittedAt": at}
+                                    for who, state_, at in reviews]},
     }
 
 
@@ -66,6 +68,15 @@ OVERVIEW = {
         "review": {"issueCount": 2, "nodes": [
             _pr(5, author="alice", ready="2026-10-03T09:00:00Z"),
             _pr(6, author="bob", draft=True),
+        ]},
+        # The search cutoff in the tests is 2026-10-02.
+        "reviewed": {"issueCount": 5, "nodes": [
+            _pr(7, author="alice", reviews=[("bob", "APPROVED", "2026-10-06T09:00:00Z"),
+                                            (ME, "COMMENTED", "2026-10-03T09:00:00Z")]),
+            _pr(8, author="alice", state="MERGED", reviews=[(ME, "APPROVED", "2026-10-05T09:00:00Z")]),
+            _pr(9, author="bob", reviews=[(ME, "APPROVED", "2026-09-20T09:00:00Z")]),  # before the cutoff
+            _pr(10, author="bob", reviews=[("carol", "APPROVED", "2026-10-05T09:00:00Z")]),  # not mine
+            _pr(5, author="alice", reviews=[(ME, "CHANGES_REQUESTED", "2026-10-04T09:00:00Z")]),  # waiting again
         ]},
     }
 }
@@ -216,6 +227,7 @@ def test_search_strings_scope_to_the_repos() -> None:
     assert "is:open author:@me" in q["mine"]
     assert "closed:>=2026-10-02" in q["closed"]
     assert "user-review-requested:@me" in q["review"]
+    assert "reviewed-by:@me -author:@me updated:>=2026-10-02" in q["reviewed"]
 
 
 def test_overview_parses_the_three_sections(fake_gh: Path, tmp_path: Path) -> None:
@@ -231,6 +243,19 @@ def test_overview_parses_the_three_sections(fake_gh: Path, tmp_path: Path) -> No
     assert review[1]["ready_at"] == review[1]["created_at"]
     sent = json.loads(calls(tmp_path, "overview")[0].split(" ", 1)[1])
     assert sent["limit"] == 50 and "repo:acme/widgets" in sent["mine"]
+
+
+def test_reviewed_keeps_my_reviews_since_the_cutoff(fake_gh: Path) -> None:
+    found = github.overview(["acme/widgets"], date(2026, 10, 2), 50, str(fake_gh), 10)
+    reviewed = found["sections"]["reviewed"]
+    # Newest review of mine first. 9 is too old, 10 has no review of mine and 5
+    # waits for my review again, so it is in that section instead.
+    assert [p["number"] for p in reviewed["prs"]] == [8, 7]
+    assert reviewed["prs"][0]["my_review"] == {"state": "APPROVED", "at": github.timestamp("2026-10-05T09:00:00Z")}
+    assert reviewed["prs"][1]["my_review"]["state"] == "COMMENTED"
+    assert reviewed["prs"][0]["status"] == "merged"
+    # Every match came back, so the count is what is left.
+    assert reviewed["total"] == 2
 
 
 def test_details_parse_reviewers_and_activity(fake_gh: Path) -> None:
@@ -372,7 +397,7 @@ def test_hud_page_and_header_link(client: TestClient) -> None:
     assert page.status_code == 200
     assert 'id="section-mine"' in page.text and "dist/hud/hud.js" in page.text
     # Each section says it is loading until the script fills it in.
-    assert page.text.count('class="empty hud-loading">Loading&hellip;') == 4
+    assert page.text.count('class="empty hud-loading">Loading&hellip;') == 5
     assert 'class="topnav current" href="/hud"' in page.text
     # Every page links to it, not only the catalog.
     assert 'href="/hud">HUD</a>' in client.get("/").text

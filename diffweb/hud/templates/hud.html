@@ -29,6 +29,10 @@
   <h3 class="hud-sub">Drafts</h3>
   <div id="section-review-drafts"><p class="empty hud-loading">Loading&hellip;</p></div>
 </section>
+<section class="hud-section">
+  <h2>Recently reviewed <span class="hud-count" id="count-reviewed"></span></h2>
+  <div id="section-reviewed"><p class="empty hud-loading">Loading&hellip;</p></div>
+</section>
 <p class="summary dim">Repos: {% for r in hud.repos %}<code>{{ r }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</p>
 {% endif %}
 {% endblock %}
