@@ -369,6 +369,23 @@ def test_blob_shas_cover_worktree_changes(world: dict[str, Path]) -> None:
     assert all(v and set(v) != {"0"} for v in shas.values())
 
 
+def test_deleted_files_are_not_hashed(world: dict[str, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = world["repo"]
+    git(repo, "rm", "-qf", "b.txt")
+    git(repo, "commit", "-qm", "drop b")
+    (repo / "a.txt").unlink()  # and one deleted only on disk
+    real = gitio._try_git
+    hashed: list[tuple[str, ...]] = []
+    monkeypatch.setattr(gitio, "_try_git", lambda path, *args: (hashed.append(args) if args[0] == "hash-object" else None) or real(path, *args))
+    mb = gitio.merge_base(str(repo), "origin/master")
+    for end in ("HEAD", WORKTREE):
+        changes = gitio.raw_changes(str(repo), mb, end)
+        assert changes["b.txt"] == {"status": "D", "old_path": "b.txt", "sha": "worktree"}
+    assert changes["a.txt"] == {"status": "D", "old_path": "a.txt", "sha": "worktree"}
+    # No file on disk to hash for any of them.
+    assert hashed == []
+
+
 def test_summarise(world: dict[str, Path]) -> None:
     wt = next(w for w in gitio.discover(DiffwebConfig(roots=[str(world["repo"])])) if w.name == "proj")
     s = gitio.summarise(wt, "origin/master")

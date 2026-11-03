@@ -397,7 +397,11 @@ def _parse_raw(path: str, out: str) -> dict[str, dict[str, str]]:
         fields = meta.split()
         dst = fields[3] if len(fields) > 3 else ""
         status = fields[4][:1] if len(fields) > 4 else ""
-        if set(dst) <= {"0"}:
+        if status == "D":
+            # A deleted file has no post-image. git reports zeros, and there is
+            # nothing on disk to hash.
+            dst = "worktree"
+        elif set(dst) <= {"0"}:
             # Uncommitted: git reports zeros, so hash what is on disk.
             dst = (_try_git(path, "hash-object", "--", name) or "").strip() or "worktree"
         changes[name] = {"status": status, "old_path": old, "sha": dst}
