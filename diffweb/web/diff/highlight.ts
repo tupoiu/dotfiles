@@ -16,7 +16,46 @@ interface Hljs {
   getLanguage(name: string): unknown;
 }
 
-const hljs = (): Hljs | undefined => (globalThis as { hljs?: Hljs }).hljs;
+interface Mode {
+  className?: string;
+  begin?: RegExp | string;
+  end?: RegExp | string;
+  contains?: Mode[];
+  variants?: Mode[];
+}
+
+// highlight.js's Markdown starts italics at any `_`, inside a word too, and
+// ends them at the next `_` however many lines later. So `rendered_pin_sha`
+// italicised the text up to the next underscore. Like GitHub, start only at
+// an `_` with no word character before it, and end at a closing `_` or at the
+// end of the line. This must run before the grammar is first compiled.
+function fixMarkdownEmphasis(h: Hljs): void {
+  const seen = new Set<Mode>();
+  const visit = (m: Mode | undefined): void => {
+    if (!m || typeof m !== "object" || seen.has(m)) return;
+    seen.add(m);
+    if (m.className === "emphasis") {
+      for (const v of m.variants ?? []) {
+        if (String(v.begin) === String(/_(?![_\s])/)) {
+          v.begin = /(?<![A-Za-z0-9_])_(?![_\s])/;
+          v.end = /_(?![A-Za-z0-9])|\n/;
+        }
+      }
+    }
+    for (const c of [...(m.contains ?? []), ...(m.variants ?? [])]) visit(c);
+  };
+  visit(h.getLanguage("markdown") as Mode | undefined);
+}
+
+let fixed: Hljs | undefined;
+const hljs = (): Hljs | undefined => {
+  const h = (globalThis as { hljs?: Hljs }).hljs;
+  if (h && h !== fixed) {
+    fixMarkdownEmphasis(h);
+    fixed = h;
+  }
+  return h;
+};
 
 // Names highlight.js does not know as aliases. Anything else is tried as-is.
 // Maps, not plain objects: a file called `constructor` must not find Object's.

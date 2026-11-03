@@ -131,6 +131,15 @@ describe("highlighting", () => {
     expect(languageFor("uv.lock")).toBeNull();
   });
 
+  test("markdown underscores inside words are not italics, and italics stop at the line end", () => {
+    const italic = (lines: ReturnType<typeof highlightFile>) =>
+      lines.map((l) => l.filter((seg) => seg.scopes.includes("hljs-emphasis")).map((seg) => seg.text).join(""));
+    expect(italic(highlightFile("Set rendered_pin_sha in the\nappset, then make_render\nand check.\n", "markdown")))
+      .toEqual(["", "", ""]);
+    expect(italic(highlightFile("This is _really_ it.\nNext line.", "markdown"))).toEqual(["_really_", ""]);
+    expect(italic(highlightFile("An _open\nline two", "markdown"))).toEqual(["_open", ""]);
+  });
+
   test("names that Object has do not throw", () => {
     for (const path of ["src/constructor", "a/__proto__", "x.constructor", "y.__proto__", "z.toString"]) {
       expect(languageFor(path)).toBeNull();
