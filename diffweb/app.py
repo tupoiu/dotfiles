@@ -264,6 +264,16 @@ def api_diff(
     patterns = config.tests.paths if not tests else []
     spec = gitio.test_pathspecs(patterns, exclude=True)
 
+    if files and renderer == "line":
+        # A lazy load of some files. The page has the range's stats, shas and
+        # review state from its first request and reads only `diff` here, so
+        # none of that whole-range work is done again for each file.
+        diff = gitio.remerge_diff_text(wt.path, e, files, spec) if remerge else gitio.diff_text(wt.path, s, e, files, spec)
+        return {
+            "renderer": renderer, "start": s, "end": e, "base": base, "merge": merge, "remerge": remerge,
+            "files": [], "hidden_tests": None, "review": {}, "shas": {}, "lazy": False, "diff": diff,
+        }
+
     def range_numstat(pathspec: list[str]) -> list[dict[str, object]]:
         if remerge:
             return gitio.remerge_numstat(wt.path, e, pathspec)
@@ -312,25 +322,17 @@ def api_diff(
         lazy = False
     else:
         with timer.stage("diff"):
-            if files:
-                diff = (
-                    gitio.remerge_diff_text(wt.path, e, files, spec)
-                    if remerge
-                    else gitio.diff_text(wt.path, s, e, files, spec)
-                )
-                lazy = False
-            else:
-                # One `git diff`. Sizing it with a second, identical `git diff` whose
-                # output was thrown away doubled the most expensive stage of the
-                # request, and saved no memory either - the subprocess buffers the
-                # whole output regardless.
-                diff = cached_diff(wt.path, s, e, config.limits.max_inline_diff_bytes, remerge, spec)
-                lazy = (
-                    len(diff.encode()) > config.limits.max_inline_diff_bytes
-                    or len(stats) > config.limits.max_inline_files
-                )
-                if lazy:
-                    diff = ""
+            # One `git diff`. Sizing it with a second, identical `git diff` whose
+            # output was thrown away doubled the most expensive stage of the
+            # request, and saved no memory either - the subprocess buffers the
+            # whole output regardless.
+            diff = cached_diff(wt.path, s, e, config.limits.max_inline_diff_bytes, remerge, spec)
+            lazy = (
+                len(diff.encode()) > config.limits.max_inline_diff_bytes
+                or len(stats) > config.limits.max_inline_files
+            )
+            if lazy:
+                diff = ""
 
     payload = {
         "renderer": renderer,

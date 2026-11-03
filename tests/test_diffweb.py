@@ -482,6 +482,19 @@ def test_diff_endpoint_lazy_when_over_limit(
     assert body["lazy"] is True and body["diff"] == ""
 
 
+def test_per_file_loads_skip_the_whole_range_work(
+    client: TestClient, config: DiffwebConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def whole_range(*args: object, **kwargs: object) -> None:
+        raise AssertionError("a per-file load must not read the whole range")
+
+    for name in ("numstat", "raw_changes"):
+        monkeypatch.setattr(gitio, name, whole_range)
+    body = client.get(f"/api/w/{wt_id(config, 'proj')}/diff", params={"files": ["c.txt"]}).json()
+    assert "c.txt" in body["diff"] and "a.txt" not in body["diff"]
+    assert body["lazy"] is False and body["files"] == [] and body["shas"] == {}
+
+
 def test_structural_disabled_by_default(client: TestClient, config: DiffwebConfig) -> None:
     r = client.get(f"/api/w/{wt_id(config, 'proj')}/diff", params={"renderer": "structural"})
     assert r.status_code == 400
