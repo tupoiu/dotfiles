@@ -62,6 +62,9 @@ const hljs = (): Hljs | undefined => {
 const BY_EXTENSION = new Map(Object.entries({
   jsonc: "json", jsonl: "json", lock: "", tsx: "typescript", mjs: "javascript", cjs: "javascript",
   pyi: "python",
+  // No Svelte grammar comes with highlight.js. Its HTML one draws the markup,
+  // <script> as JavaScript and <style> as CSS; only the {#if} blocks stay plain.
+  svelte: "xml",
 }));
 const BY_NAME = new Map(Object.entries({
   Dockerfile: "dockerfile", Makefile: "makefile", "CMakeLists.txt": "cmake",

@@ -140,6 +140,16 @@ describe("highlighting", () => {
     expect(italic(highlightFile("An _open\nline two", "markdown"))).toEqual(["_open", ""]);
   });
 
+  test("svelte files use the HTML grammar, with the script as JavaScript", () => {
+    expect(languageFor("src/App.svelte")).toBe("xml");
+    const lines = highlightFile("<script>\n  let n = 0;\n</script>\n{#if n > 1}\n  <b>{n}</b>\n{/if}", "xml");
+    const scoped = (i: number, scope: string) =>
+      lines[i]!.filter((seg) => seg.scopes.includes(scope)).map((seg) => seg.text).join("");
+    expect(scoped(0, "hljs-name")).toBe("script");
+    expect(scoped(1, "hljs-keyword")).toBe("let");
+    expect(scoped(4, "hljs-name")).toBe("bb");  // <b> and </b>
+  });
+
   test("names that Object has do not throw", () => {
     for (const path of ["src/constructor", "a/__proto__", "x.constructor", "y.__proto__", "z.toString"]) {
       expect(languageFor(path)).toBeNull();
