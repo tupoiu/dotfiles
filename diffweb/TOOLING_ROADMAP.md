@@ -22,6 +22,25 @@ Format - one entry per session, newest first:
 
 ---
 
+## 2026-11-12 - stale lazy loads on live reload; first kept browser test
+
+### From Claude
+
+- The API through `TestClient` - did not help find the bug. Every response was
+  correct; the fault was two renders running at once in the page.
+- Throwaway Playwright script with `page.route` slowing the per-file loads -
+  helped: it showed the duplicates on the first run. Slow loads alone were not
+  enough to start a race; it also needed live reload during a load.
+- `tests/test_diffweb_browser.py` (new) - holds a response with `page.route` and
+  `route.fetch()`, then lets it go, so the race is the same on every run, with
+  no wait for the 2s live reload poll. Checked to fail on the old page script.
+  **Improve:** each kept check needs the same in-process server and the same
+  module-scoped browser. Move them into a `conftest.py` once a second browser
+  test file exists.
+- `pkill -f "diffweb --port"` killed the shell that ran it again (exit 144), as
+  the 2026-10-14 entry says. `kill $(pgrep -f "python -m diffweb --port N")`
+  works.
+
 ## 2026-10-14 - own diff renderer and expand-context buttons
 - A Playwright script in the scratchpad that clicks the expanders, toggles
   side-by-side and appends to a file for live reload - helped most. It found

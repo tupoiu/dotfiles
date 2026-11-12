@@ -11,6 +11,7 @@ dev = [
   "pytest",
   "pytest-xdist>=3.8.0",
   "httpx",  # FastAPI TestClient
+  "playwright>=1.65",  # browser tests; the browser is a separate `playwright install chromium`
 ]
 # diffweb: everything it needs is project-scoped, so `uv sync` is the whole install.
 diffweb = [
@@ -52,7 +53,7 @@ _diffweb-dev = {parallel = ["_diffweb-watch", "_diffweb-serve-reload"]}
 _diffweb-watch = "bun run --cwd diffweb watch"
 _diffweb-serve-reload = {cmd = "python -m diffweb --reload", executor = "uv" }
 _diffweb-bun-test = "bun test tests/diffweb_parse.test.ts tests/diffweb_render.test.ts"
-_diffweb-pytest = {cmd = "pytest tests/test_diffweb.py tests/test_diffweb_hud.py -q", executor = "uv" }
+_diffweb-pytest = {cmd = "pytest tests/test_diffweb.py tests/test_diffweb_hud.py tests/test_diffweb_browser.py -q", executor = "uv" }
 
 [tool.uv]
 default-groups = ["dev", "diffweb"]

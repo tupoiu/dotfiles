@@ -425,6 +425,19 @@ vendored jsdiff and highlight.js, and the Python ones skip without
 than you do. Likewise the asset-stamping test skips without a
 build, and the remerge tests skip on git older than 2.36.
 
+What the page scripts do in a browser - the order of fetches, redraws, what
+ends up on the page - is in `tests/test_diffweb_browser.py`. It runs the server
+in-process and drives Chromium with Playwright, a dev dependency, so `uv sync`
+installs it. The browser is a separate one-off download, and the tests skip
+without it:
+
+```console
+$ uv run playwright install chromium
+```
+
+Hold or delay responses with `page.route` instead of sleeping, so a race is the
+same on every run, and keep each test to a second or so.
+
 `bun build` strips types without checking them, so `poe diffweb-typecheck`
 (`tsc --noEmit`, part of `poe diffweb-test`) is the only thing that catches a
 type error.
