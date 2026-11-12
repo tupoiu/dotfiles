@@ -100,6 +100,9 @@ let infoByPath: Record<string, FileInfo> = {};  // keyed on the plain path the p
 let currentRange = { start: "", end: "", remerge: false };  // as the server resolved them
 let canExpand = false;      // expanders only on the line diff; see INTENT-expand-context.md
 let seededNoise = false;    // auto-collapse noisy files once, not on every render
+// Counts the renders. A render that sees a newer one has started stops, so a
+// slow per-file load cannot add stale files to the newer render's page.
+let renderGen = 0;
 
 // --- localStorage, which can be full, corrupt or missing ------------------
 
@@ -271,6 +274,7 @@ async function render(): Promise<void> {
 }
 
 async function renderDiff(): Promise<void> {
+  const gen = ++renderGen;
   syncUrl();
   status("loading diff…", true);
   const q: Query = { base: $base.value };
@@ -284,6 +288,7 @@ async function renderDiff(): Promise<void> {
   const r = await fetch(api("diff", q));
   const data = (await r.json()) as DiffResponse;
   const fetchMs = performance.now() - fetchStart;
+  if (gen !== renderGen) return;
   if (!r.ok || data.error) {
     $diff.replaceChildren();
     const warn = document.createElement("span");
@@ -321,7 +326,8 @@ async function renderDiff(): Promise<void> {
   if (data.lazy) {
     $diff.replaceChildren();
     $summary.innerHTML += ` · <span class="warn">diff is large — loading per file</span>`;
-    await renderLazy(files, q);
+    await renderLazy(files, q, gen);
+    if (gen !== renderGen) return;
   } else {
     draw(data.diff);
   }
@@ -429,12 +435,13 @@ function draw(diffText: string, target?: HTMLElement): void {
   if (!target) decorateFiles(node);
 }
 
-async function renderLazy(files: FileInfo[], q: Query): Promise<void> {
+async function renderLazy(files: FileInfo[], q: Query, gen: number): Promise<void> {
   for (const f of files) {
     const holder = document.createElement("div");
     $diff.appendChild(holder);
     const r = await fetch(api("diff", { ...q, files: f.path }));
     const d = (await r.json()) as DiffResponse;
+    if (gen !== renderGen) return;
     if (d.diff) draw(d.diff, holder);
   }
   decorateFiles($diff);
