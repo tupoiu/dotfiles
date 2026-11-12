@@ -24,7 +24,7 @@ from fastapi.responses import (
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import forge, gitio, profiling
+from . import forge, gitio, profiling, rust_tests
 from .config import DiffwebConfig, load_config
 from .gitio import INDEX, UPSTREAM, WORKTREE, Worktree
 from .hud import routes as hud_routes
@@ -101,6 +101,24 @@ def find_worktree(wt_id: str, config: DiffwebConfig) -> Worktree:
 
 # Resolved diffs are immutable once both ends are commits, so they cache well.
 _diff_cache: dict[tuple[str, str, str, bool, tuple[str, ...]], str] = {}
+
+
+def hide_rust_tests(path: str, start: str, end: str, diff: str) -> tuple[str, dict[str, rust_tests.Hidden]]:
+    """`diff` without the test region of each `.rs` file (see rust_tests)."""
+
+    def read(side: str, file: str) -> str | None:
+        try:
+            data = gitio.blob_bytes(path, start if side == "old" else end, file)
+        except ValueError:
+            return None
+        return data.decode("utf-8", "replace") if data is not None else None
+
+    return rust_tests.hide(diff, read)
+
+
+def tests_from(rust: dict[str, rust_tests.Hidden]) -> dict[str, int]:
+    """Where each file's tests start, so the page's expanders stop before them."""
+    return {path: info.new_start for path, info in rust.items() if info.new_start}
 
 
 def cached_diff(
@@ -269,9 +287,13 @@ def api_diff(
         # review state from its first request and reads only `diff` here, so
         # none of that whole-range work is done again for each file.
         diff = gitio.remerge_diff_text(wt.path, e, files, spec) if remerge else gitio.diff_text(wt.path, s, e, files, spec)
+        rust: dict[str, rust_tests.Hidden] = {}
+        if patterns and not remerge:
+            diff, rust = hide_rust_tests(wt.path, s, e, diff)
         return {
             "renderer": renderer, "start": s, "end": e, "base": base, "merge": merge, "remerge": remerge,
             "files": [], "hidden_tests": None, "review": {}, "shas": {}, "lazy": False, "diff": diff,
+            "tests_from": tests_from(rust),
         }
 
     def range_numstat(pathspec: list[str]) -> list[dict[str, object]]:
@@ -306,6 +328,7 @@ def api_diff(
             row["status"] = change.get("status", "")
             row["old_path"] = change.get("old_path", "")
 
+    rust: dict[str, rust_tests.Hidden] = {}
     if renderer == "structural":
         if not config.features.structural:
             raise HTTPException(400, "structural diff is disabled in config")
@@ -327,6 +350,26 @@ def api_diff(
             # request, and saved no memory either - the subprocess buffers the
             # whole output regardless.
             diff = cached_diff(wt.path, s, e, config.limits.max_inline_diff_bytes, remerge, spec)
+            if patterns and not remerge:
+                # Rust keeps unit tests in the file they test: cut those out too,
+                # and take them off the counts, so the page agrees with the patch.
+                diff, rust = hide_rust_tests(wt.path, s, e, diff)
+                gone = {path for path, info in rust.items() if info.whole_file}
+                for row in stats:
+                    info = rust.get(gitio.rename_target(str(row["path"])))
+                    if info and row["added"] is not None:
+                        row["added"] = int(row["added"]) - info.added
+                        row["removed"] = int(row["removed"] or 0) - info.removed
+                stats = [row for row in stats if gitio.rename_target(str(row["path"])) not in gone]
+                shas = {k: v for k, v in shas.items() if k not in gone}
+                review = {k: v for k, v in review.items() if k not in gone}
+                cut = [info for info in rust.values() if info.added or info.removed]
+                if hidden_tests is not None and cut:
+                    hidden_tests["in_file"] = {
+                        "files": len(cut),
+                        "added": sum(i.added for i in cut),
+                        "removed": sum(i.removed for i in cut),
+                    }
             lazy = (
                 len(diff.encode()) > config.limits.max_inline_diff_bytes
                 or len(stats) > config.limits.max_inline_files
@@ -347,6 +390,7 @@ def api_diff(
         "shas": shas,
         "lazy": lazy,
         "diff": diff,
+        "tests_from": tests_from(rust),
     }
     if not timer.enabled:
         return payload

@@ -28,7 +28,13 @@ interface DiffResponse {
   merge: boolean;
   remerge: boolean;
   files: FileInfo[];
-  hidden_tests: { files: number; added: number; removed: number } | null;
+  hidden_tests: {
+    files: number; added: number; removed: number;
+    // Rust unit tests cut out of the files that are still shown.
+    in_file?: { files: number; added: number; removed: number };
+  } | null;
+  // With "hide tests": the line each Rust file's tests start at.
+  tests_from?: Record<string, number>;
   review: Record<string, ReviewState>;
   shas: Record<string, string>;
   lazy: boolean;
@@ -95,6 +101,9 @@ const SCOPES: Record<string, { start: string; end: string }> = {
 // What the last render drew, for the handlers that run after it.
 let currentReview: Record<string, ReviewState> = {};
 let shas: Record<string, string> = {};
+// Where each Rust file's tests start, while "hide tests" is on. Expanders stop
+// before it, so they cannot show what the server cut out.
+let testsFrom = new Map<string, number>();
 let fileInfo: Record<string, FileInfo> = {};    // keyed on the numstat spelling
 let infoByPath: Record<string, FileInfo> = {};  // keyed on the plain path the parser reports
 let currentRange = { start: "", end: "", remerge: false };  // as the server resolved them
@@ -305,6 +314,7 @@ async function renderDiff(): Promise<void> {
   const files = data.files || [];
   currentReview = data.review || {};
   shas = data.shas || {};
+  testsFrom = new Map(Object.entries(data.tests_from ?? {}));
   currentRange = { start: data.start, end: data.end, remerge: !!data.remerge };
   canExpand = data.renderer === "line" && !data.remerge;
   fileInfo = Object.fromEntries(files.map((f) => [f.path, f]));
@@ -339,9 +349,15 @@ async function renderDiff(): Promise<void> {
 function testsNote(data: DiffResponse): string {
   const t = data.hidden_tests;
   if (!t) return "";
-  if (!t.files) return ` · <span class="merge-note">no test files in this range</span>`;
-  return ` · <span class="merge-note">${t.files} test file${t.files === 1 ? "" : "s"} hidden` +
-    ` (<span class="add">+${t.added}</span> <span class="del">−${t.removed}</span>)</span>`;
+  const lines = (added: number, removed: number) =>
+    ` (<span class="add">+${added}</span> <span class="del">−${removed}</span>)`;
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  const parts: string[] = [];
+  if (t.files) parts.push(`${plural(t.files, "test file")} hidden${lines(t.added, t.removed)}`);
+  const f = t.in_file;
+  if (f?.files) parts.push(`tests in ${plural(f.files, "Rust file")} hidden${lines(f.added, f.removed)}`);
+  if (!parts.length) return ` · <span class="merge-note">no tests in this range</span>`;
+  return ` · <span class="merge-note">${parts.join(", ")}</span>`;
 }
 
 // Say which of the two readings of a merge commit is on screen, since the
@@ -525,7 +541,8 @@ function applySides(d: Drawn, lang: string | null, expand: boolean, old: Side | 
       return highlightLine(text, lang);
     };
   }
-  if (expand && now) d.view.endLines = now.lines;
+  const cut = testsFrom.get(d.key);
+  if (expand && now) d.view.endLines = cut ? now.lines.slice(0, cut - 1) : now.lines;
 }
 
 // Use what the cache already has. False when a side still has to be fetched.

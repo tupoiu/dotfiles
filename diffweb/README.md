@@ -150,6 +150,15 @@ patterns are git's glob pathspecs, not `fnmatch` like `noise`: `*` stops at a
 shows as a deletion. The tick rides in the URL as `tests=0` but, like *true
 diff*, is not remembered. Set `tests.paths` to `[]` to remove the control.
 
+Rust keeps its unit tests in the file they test, so *hide tests* also cuts each
+`.rs` file at its test region: from the first `#[cfg(test)]` or `mod tests`
+line to the end of the file, the same rule as the `loc` command. Added lines
+are judged by the new file and removed ones by the old one. A file whose only
+changes were tests goes, like a test file. The counts leave the cut lines out,
+the summary says what went (`tests in 2 Rust files hidden (+40 −3)`), and
+expanding the last gap of a file stops where its tests start. The cut is
+skipped on a merge's remerge diff and on the structural diff.
+
 **Images.** git can only say `Binary files differ` about a picture, so each
 image file in the diff gets a pane showing it *before* and *after*, side by side
 on a checkerboard: both sides for a change or rename, one side for an added or
