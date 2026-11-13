@@ -165,7 +165,9 @@ skipped on a merge's remerge diff and on the structural diff.
 
 **Emphasis.** Files that deserve a closer look stand out: each `emphasis`
 rule gives the files it matches a rail down the left edge in its colour, a
-chip with its label in the header, and a dot in the file list. `header:
+chip with its label in the header, and a dot in the file list. Emphasised
+files come first in the diff and the file list, each group in git's order.
+`header:
 tinted` (the default) washes the header with the colour; `header: filled`
 fills it, for the files that matter most. By default protos and specs are
 filled, and `pyproject.toml` and `Cargo.toml` are tinted. The colours are

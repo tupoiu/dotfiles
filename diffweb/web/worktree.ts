@@ -338,7 +338,7 @@ async function renderDiff(): Promise<void> {
   if (data.lazy) {
     $diff.replaceChildren();
     $summary.innerHTML += ` · <span class="warn">diff is large — loading per file</span>`;
-    await renderLazy(files, q, gen);
+    await renderLazy(emphasisedFirst(files, (f) => f), q, gen);
     if (gen !== renderGen) return;
   } else {
     draw(data.diff);
@@ -426,9 +426,16 @@ function fileListHtml(files: DiffFile[]): string {
 const displayName = (path: string) => path.replace(" => ", " → ");
 
 // `target` is one file's holder in a lazy render; the whole page otherwise.
+// Files that match an `emphasis` rule come first. The sort is stable, so each
+// group keeps git's order.
+function emphasisedFirst<T>(items: T[], info: (item: T) => FileInfo | undefined): T[] {
+  const rank = (item: T) => (info(item)?.emphasis ? 0 : 1);
+  return [...items].sort((a, b) => rank(a) - rank(b));
+}
+
 function draw(diffText: string, target?: HTMLElement): void {
   const node = target ?? $diff;
-  const files = parseDiff(diffText);
+  const files = emphasisedFirst(parseDiff(diffText), (f) => infoByPath[filePath(f)]);
   const html: string[] = target ? [] : [fileListHtml(files)];
   const made: [Drawn, boolean][] = [];
   for (const file of files) {
