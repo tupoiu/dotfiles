@@ -5,6 +5,10 @@
   --add-bg: #e6ffec; --add-num: #ccffd8; --add-word: #abf2bc;
   --del-bg: #ffebe9; --del-num: #ffd7d5; --del-word: #ffb8b4;
   --hunk-bg: #ddf4ff; --hunk-fg: #57606a; --expand-hover: #54aeff;
+  --em-orange: #c2610c; --em-orange-soft: #fff1e5;
+  --em-purple: #8250df; --em-purple-soft: #f4eefe;
+  --em-teal: #0b7f86;   --em-teal-soft: #e3f6f7;
+  --em-pink: #bf3989;   --em-pink-soft: #ffeef8;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -14,6 +18,10 @@
     --add-bg: #12261e; --add-num: #173a26; --add-word: #1f5c3a;
     --del-bg: #2a1618; --del-num: #3d1d21; --del-word: #6e2b31;
     --hunk-bg: #121d2f; --hunk-fg: #8b949e; --expand-hover: #1f6feb;
+    --em-orange: #f0883e; --em-orange-soft: #2b1d10;
+    --em-purple: #b392f0; --em-purple-soft: #221a33;
+    --em-teal: #39c5cf;   --em-teal-soft: #0f2629;
+    --em-pink: #ff7eb6;   --em-pink-soft: #2e1624;
   }
 }
 * { box-sizing: border-box; }
@@ -222,6 +230,33 @@ input, select {
 
 .dw-file.focused { outline: 2px solid var(--accent); outline-offset: -1px; }
 .dw-file.focused .dw-file-header { background: var(--accent-soft, var(--panel)); }
+
+/* Emphasis (the `emphasis` rules in diffweb.yaml): a rail down the left edge in
+   the rule's colour, and a header either washed with it or filled with it.
+   These come after .focused, so focus keeps its outline but not the header. */
+.em-orange { --em: var(--em-orange); --em-soft: var(--em-orange-soft); }
+.em-purple { --em: var(--em-purple); --em-soft: var(--em-purple-soft); }
+.em-teal   { --em: var(--em-teal);   --em-soft: var(--em-teal-soft); }
+.em-pink   { --em: var(--em-pink);   --em-soft: var(--em-pink-soft); }
+.dw-file.em { border-left: 5px solid var(--em); }
+.dw-file.em .dw-file-header { border-radius: 0 6px 0 0; }
+.dw-file.em.collapsed .dw-file-header { border-radius: 0 6px 6px 0; }
+.dw-file.em-tinted .dw-file-header { background: var(--em-soft); }
+.dw-file.em-filled { border-color: var(--em); }
+.dw-file.em-filled .dw-file-header { background: var(--em); border-bottom-color: var(--em); }
+.dw-file.em-filled .dw-file-header,
+.dw-file.em-filled .dw-file-header :is(.chevron, .file-stats .add, .file-stats .del, .review-tick,
+  .dw-tag, .noise-tag, .untracked-tag, .badge-changed) { color: var(--bg); }
+.dw-file.em-filled .dw-file-header :is(.noise-tag, .untracked-tag) { border-color: currentColor; }
+.em-chip {
+  margin-left: 8px; font-size: 10.5px; font-weight: 600; white-space: nowrap; color: var(--em);
+  border: 1px solid var(--em); border-radius: 999px; padding: 0 7px;
+}
+.dw-file.em-filled .em-chip { background: var(--bg); border-color: var(--bg); }
+.em-dot {
+  display: inline-block; width: 8px; height: 8px; margin-right: 6px; vertical-align: 0;
+  border-radius: 50%; background: var(--em);
+}
 
 #key-help {
   position: fixed; inset: 0; margin: auto; width: min(420px, 90vw); height: max-content;

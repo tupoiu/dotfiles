@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import structural
-from .config import DiffwebConfig
+from .config import DiffwebConfig, EmphasisRule
 
 # The sentinel end-of-range meaning "whatever is on disk right now".
 WORKTREE = "WORKTREE"
@@ -325,6 +325,47 @@ def is_noisy(path: str, patterns: list[str]) -> bool:
         if any(fnmatch.fnmatch(c, v) for c in candidates for v in variants):
             return True
     return False
+
+
+@functools.lru_cache(maxsize=256)
+def _glob_regex(pattern: str) -> re.Pattern[str]:
+    """A git-style glob as a regex: `*` and `?` stay inside one path segment,
+    `**/` is zero or more folders, and a trailing `/**` is everything below."""
+    out = []
+    i = 0
+    while i < len(pattern):
+        if pattern.startswith("**/", i):
+            out.append("(?:.*/)?")
+            i += 3
+        elif pattern.startswith("/**", i) and i + 3 == len(pattern):
+            out.append("/.*")
+            i += 3
+        elif pattern[i] == "*":
+            out.append("[^/]*")
+            i += 1
+        elif pattern[i] == "?":
+            out.append("[^/]")
+            i += 1
+        else:
+            out.append(re.escape(pattern[i]))
+            i += 1
+    return re.compile("".join(out) + r"\Z")
+
+
+def glob_match(path: str, pattern: str) -> bool:
+    """git-style glob match, case-sensitive. A pattern with no `/` is matched
+    against the file name only, so `*SPEC*` does not catch a SPECS folder."""
+    if "/" not in pattern:
+        return _glob_regex(pattern).match(path.rsplit("/", 1)[-1]) is not None
+    return _glob_regex(pattern).match(path) is not None
+
+
+def emphasis_for(path: str, rules: Sequence[EmphasisRule]) -> dict[str, str | None] | None:
+    """The first emphasis rule `path` matches, as the page needs it, or None."""
+    for rule in rules:
+        if any(glob_match(path, p) for p in rule.paths):
+            return {"label": rule.label, "color": rule.color, "header": rule.header}
+    return None
 
 
 def _parse_numstat(out: str) -> list[dict[str, object]]:

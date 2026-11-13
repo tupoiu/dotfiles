@@ -87,6 +87,10 @@ tests:                     # what "hide tests" leaves out; git glob pathspecs
   paths: ["**/test_*.py", "**/*_test.*", "**/*.test.*", "**/*.spec.*",
           "**/conftest.py", "**/tests/**", "**/test/**", "**/__tests__/**",
           "**/testdata/**"]
+emphasis:                  # files drawn with a coloured rail; the first matching rule wins
+  - {label: proto, paths: ["*.proto"], color: purple, header: filled}
+  - {label: dependencies, paths: [pyproject.toml, Cargo.toml], color: orange}
+  - {label: spec, paths: ["*SPEC*", "**/specs/**/*.md"], color: teal, header: filled}
 tools:
   difft_path: null         # defaults to whatever `difft` is on PATH
   gh_path: null            # defaults to whatever `gh` is on PATH
@@ -158,6 +162,21 @@ changes were tests goes, like a test file. The counts leave the cut lines out,
 the summary says what went (`tests in 2 Rust files hidden (+40 −3)`), and
 expanding the last gap of a file stops where its tests start. The cut is
 skipped on a merge's remerge diff and on the structural diff.
+
+**Emphasis.** Files that deserve a closer look stand out: each `emphasis`
+rule gives the files it matches a rail down the left edge in its colour, a
+chip with its label in the header, and a dot in the file list. `header:
+tinted` (the default) washes the header with the colour; `header: filled`
+fills it, for the files that matter most. By default protos and specs are
+filled, and `pyproject.toml` and `Cargo.toml` are tinted. The colours are
+orange, purple, teal and pink, each with a light and a dark shade; red, green
+and blue already mean removed, added and focused. `paths` are git-style
+globs, matched case-sensitively: `*` stays inside one folder, `**/` is any
+number of folders (none included, so `specs/**/*.md` matches `specs/a.md`),
+and a pattern with no `/` is matched against the file name, so `*SPEC*`
+catches `API_SPEC.md` but not a `SPECS` folder or `x.spec.ts`. A file takes
+the first rule it matches. Setting `emphasis` replaces the defaults, and
+`emphasis: []` turns it off.
 
 **Images.** git can only say `Binary files differ` about a picture, so each
 image file in the diff gets a pane showing it *before* and *after*, side by side

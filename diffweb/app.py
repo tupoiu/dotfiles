@@ -314,6 +314,7 @@ def api_diff(
             }
         for row in stats:
             row["noisy"] = gitio.is_noisy(str(row["path"]), config.noise.collapse_by_default)
+            row["emphasis"] = gitio.emphasis_for(gitio.rename_target(str(row["path"])), config.emphasis)
 
     with timer.stage("shas"):
         changes = (

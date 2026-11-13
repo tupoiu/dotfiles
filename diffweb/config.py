@@ -10,6 +10,8 @@ import os
 import re
 from pathlib import Path
 
+from typing import Literal
+
 import yaml
 from pydantic import BaseModel, Field, field_validator
 
@@ -85,6 +87,32 @@ class Tests(BaseModel):
     )
 
 
+class EmphasisRule(BaseModel):
+    """Files to draw with a coloured rail, so they stand out on the diff page."""
+
+    model_config = {"extra": "forbid"}
+
+    # Shown as a chip in the file header, to say why the file stands out.
+    label: str | None = None
+    # git-style globs, case-sensitive: `*` stays inside one folder and `**/`
+    # is any number of folders, none included. One with no `/` is matched
+    # against the file name only.
+    paths: list[str]
+    # Red, green and blue already mean removed, added and focused.
+    color: Literal["orange", "purple", "teal", "pink"]
+    # "tinted" washes the header with the colour; "filled" fills it.
+    header: Literal["tinted", "filled"] = "tinted"
+
+
+def _default_emphasis() -> list[EmphasisRule]:
+    return [
+        EmphasisRule(label="proto", paths=["*.proto"], color="purple", header="filled"),
+        EmphasisRule(label="dependencies", paths=["pyproject.toml", "Cargo.toml"], color="orange"),
+        # Case-sensitive, so test files like `x.spec.ts` are not specs.
+        EmphasisRule(label="spec", paths=["*SPEC*", "**/specs/**/*.md"], color="teal", header="filled"),
+    ]
+
+
 _REPO = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 
 
@@ -125,6 +153,9 @@ class DiffwebConfig(BaseModel):
     limits: Limits = Field(default_factory=Limits)
     noise: Noise = Field(default_factory=Noise)
     tests: Tests = Field(default_factory=Tests)
+    # The first rule a file matches is the one it gets. Setting the key replaces
+    # the defaults; `[]` turns emphasis off.
+    emphasis: list[EmphasisRule] = Field(default_factory=_default_emphasis)
     tools: Tools = Field(default_factory=Tools)
     hud: Hud = Field(default_factory=Hud)
     state_db: str = "~/.local/state/diffweb/state.db"

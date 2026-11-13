@@ -17,6 +17,8 @@ interface FileInfo {
   untracked?: boolean;
   status: string;               // git's status letter: A, D, M, R...
   old_path: string;
+  // The first `emphasis` rule in diffweb.yaml the file matches.
+  emphasis?: { label: string | null; color: string; header: "tinted" | "filled" } | null;
 }
 
 interface DiffResponse {
@@ -413,8 +415,10 @@ function anchorFor(path: string): string {
 function fileListHtml(files: DiffFile[]): string {
   if (!files.length) return "";
   const items = files.map((f) => {
-    const path = infoByPath[filePath(f)]?.path ?? filePath(f);
-    return `<li><a href="#${anchorFor(path)}">${esc(displayName(path))}</a></li>`;
+    const info = infoByPath[filePath(f)];
+    const path = info?.path ?? filePath(f);
+    const dot = info?.emphasis ? `<span class="em-dot em-${info.emphasis.color}"></span>` : "";
+    return `<li>${dot}<a href="#${anchorFor(path)}">${esc(displayName(path))}</a></li>`;
   });
   return `<details class="dw-file-list"><summary>files (${files.length})</summary><ol>${items.join("")}</ol></details>`;
 }
@@ -628,6 +632,12 @@ function decorateFiles(root: HTMLElement): void {
       if (info.noisy) {
         header.appendChild(
           tag("noise-tag", "generated", "matches noise.collapse_by_default; collapsed on first sight"));
+      }
+      const em = info.emphasis;
+      if (em) {
+        // The colour and header style are names the config allows, so safe as classes.
+        wrapper.classList.add("em", `em-${em.color}`, `em-${em.header}`);
+        if (em.label) header.appendChild(tag("em-chip", em.label, "matches an emphasis rule in diffweb.yaml"));
       }
     }
 
