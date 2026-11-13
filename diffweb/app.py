@@ -116,6 +116,45 @@ def hide_rust_tests(path: str, start: str, end: str, diff: str) -> tuple[str, di
     return rust_tests.hide(diff, read)
 
 
+_TEST_KINDS = {
+    ".rs": "Rust", ".py": "Python", ".ts": "TypeScript", ".tsx": "TypeScript",
+    ".js": "JavaScript", ".jsx": "JavaScript", ".mjs": "JavaScript", ".go": "Go",
+}
+
+
+def tests_summary(
+    test_rows: list[dict[str, object]], in_file: dict[str, rust_tests.Hidden], hidden: bool
+) -> dict[str, object]:
+    """One diffstat for every test line in the range, and a breakdown by kind.
+
+    `test_rows` are the numstat rows of the test files; `in_file` the Rust
+    tests inside the other files. The page shows the total, and the
+    breakdown when you hover it.
+    """
+    kinds: dict[str, dict[str, int]] = {}
+
+    def add(kind: str, added: int, removed: int) -> None:
+        k = kinds.setdefault(kind, {"files": 0, "added": 0, "removed": 0})
+        k["files"] += 1
+        k["added"] += added
+        k["removed"] += removed
+
+    for row in test_rows:
+        path = gitio.rename_target(str(row["path"]))
+        ext = "." + path.rsplit(".", 1)[-1] if "." in path.rsplit("/", 1)[-1] else ""
+        add(_TEST_KINDS.get(ext, "Other"), int(row["added"] or 0), int(row["removed"] or 0))
+    for info in in_file.values():
+        add("Rust, inside files", info.added, info.removed)
+    order = sorted(kinds.items(), key=lambda kv: -(kv[1]["added"] + kv[1]["removed"]))
+    return {
+        "hidden": hidden,
+        "files": sum(k["files"] for k in kinds.values()),
+        "added": sum(k["added"] for k in kinds.values()),
+        "removed": sum(k["removed"] for k in kinds.values()),
+        "kinds": [{"kind": name, **k} for name, k in order],
+    }
+
+
 def tests_from(rust: dict[str, rust_tests.Hidden]) -> dict[str, int]:
     """Where each file's tests start, so the page's expanders stop before them."""
     return {path: info.new_start for path, info in rust.items() if info.new_start}
@@ -279,7 +318,8 @@ def api_diff(
 
     # `tests=false` drops test files from every view of the range. git does the
     # filtering, so the counts, review state and patch cannot disagree.
-    patterns = config.tests.paths if not tests else []
+    test_patterns = config.tests.paths
+    patterns = test_patterns if not tests else []
     spec = gitio.test_pathspecs(patterns, exclude=True)
 
     if files and renderer == "line":
@@ -292,7 +332,7 @@ def api_diff(
             diff, rust = hide_rust_tests(wt.path, s, e, diff)
         return {
             "renderer": renderer, "start": s, "end": e, "base": base, "merge": merge, "remerge": remerge,
-            "files": [], "hidden_tests": None, "review": {}, "shas": {}, "lazy": False, "diff": diff,
+            "files": [], "tests": None, "review": {}, "shas": {}, "lazy": False, "diff": diff,
             "tests_from": tests_from(rust),
         }
 
@@ -303,15 +343,9 @@ def api_diff(
 
     with timer.stage("numstat"):
         stats = range_numstat(spec)
-        # What was left out, so the page can say so rather than look complete.
-        hidden_tests = None
-        if patterns and not files:
-            left_out = range_numstat(gitio.test_pathspecs(patterns, exclude=False))
-            hidden_tests = {
-                "files": len(left_out),
-                "added": sum(int(r["added"] or 0) for r in left_out),
-                "removed": sum(int(r["removed"] or 0) for r in left_out),
-            }
+        # The test files, hidden or not, so the page can say how much of the
+        # range is tests (and, when they are hidden, what was left out).
+        test_rows = range_numstat(gitio.test_pathspecs(test_patterns, exclude=False)) if test_patterns else None
         for row in stats:
             row["noisy"] = gitio.is_noisy(str(row["path"]), config.noise.collapse_by_default)
             row["emphasis"] = gitio.emphasis_for(gitio.rename_target(str(row["path"])), config.emphasis)
@@ -330,6 +364,7 @@ def api_diff(
             row["old_path"] = change.get("old_path", "")
 
     rust: dict[str, rust_tests.Hidden] = {}
+    in_file: dict[str, rust_tests.Hidden] = {}  # Rust tests inside the other files
     if renderer == "structural":
         if not config.features.structural:
             raise HTTPException(400, "structural diff is disabled in config")
@@ -364,13 +399,13 @@ def api_diff(
                 stats = [row for row in stats if gitio.rename_target(str(row["path"])) not in gone]
                 shas = {k: v for k, v in shas.items() if k not in gone}
                 review = {k: v for k, v in review.items() if k not in gone}
-                cut = [info for info in rust.values() if info.added or info.removed]
-                if hidden_tests is not None and cut:
-                    hidden_tests["in_file"] = {
-                        "files": len(cut),
-                        "added": sum(i.added for i in cut),
-                        "removed": sum(i.removed for i in cut),
-                    }
+                in_file = {p: i for p, i in rust.items() if i.added or i.removed}
+            elif test_rows is not None and not remerge:
+                # Shown: count them, but leave the patch and the expanders alone.
+                # A test file's own tests are already counted as a test file.
+                test_paths = {gitio.rename_target(str(r["path"])) for r in test_rows}
+                _, counted = hide_rust_tests(wt.path, s, e, diff)
+                in_file = {p: i for p, i in counted.items() if (i.added or i.removed) and p not in test_paths}
             lazy = (
                 len(diff.encode()) > config.limits.max_inline_diff_bytes
                 or len(stats) > config.limits.max_inline_files
@@ -386,7 +421,7 @@ def api_diff(
         "merge": merge,
         "remerge": remerge,
         "files": stats,
-        "hidden_tests": hidden_tests,
+        "tests": tests_summary(test_rows, in_file, hidden=bool(patterns)) if test_rows is not None else None,
         "review": review,
         "shas": shas,
         "lazy": lazy,

@@ -150,13 +150,18 @@ def test_hide_tests_hides_rust_tests_in_the_page(client) -> None:
     everything = c.get(f"/api/w/{wid}/diff", params=params).json()
     assert {f["path"] for f in everything["files"]} == {"src/lib.rs", "src/only_tests.rs"}
     assert "fn u()" in everything["diff"] and everything["tests_from"] == {}
+    # Shown, the tests inside the files are still counted.
+    t = everything["tests"]
+    assert (t["hidden"], t["files"], t["added"], t["removed"]) == (False, 2, 2, 0)
+    assert t["kinds"] == [{"kind": "Rust, inside files", "files": 2, "added": 2, "removed": 0}]
 
     data = c.get(f"/api/w/{wid}/diff", params={**params, "tests": "false"}).json()
     # only_tests.rs changed only its tests, so it is gone like a test file.
     assert {f["path"]: (f["added"], f["removed"]) for f in data["files"]} == {"src/lib.rs": (1, 0)}
     assert set(data["shas"]) == set(data["review"]) == {"src/lib.rs"}
     assert "fn b()" in data["diff"] and "fn u()" not in data["diff"] and "fn v()" not in data["diff"]
-    assert data["hidden_tests"]["in_file"] == {"files": 2, "added": 2, "removed": 0}
+    assert data["tests"] == {"hidden": True, "files": 2, "added": 2, "removed": 0,
+                             "kinds": [{"kind": "Rust, inside files", "files": 2, "added": 2, "removed": 0}]}
     assert data["tests_from"] == {"src/lib.rs": 4, "src/only_tests.rs": 3}
 
     # A lazy, per-file load is cut the same way.

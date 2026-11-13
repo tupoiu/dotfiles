@@ -1176,13 +1176,20 @@ def test_api_diff_hides_tests_on_request(
     wid = wt_id(config, "proj")
     everything = client.get(f"/api/w/{wid}/diff").json()
     assert "test_a.py" in _paths(everything["files"])
-    assert everything["hidden_tests"] is None
+    # Shown or hidden, the page gets one diffstat for the tests, by kind.
+    kinds = {"Python": (1, 2, 0), "Go": (1, 1, 0), "Other": (1, 1, 0)}  # files, added, removed
+    t = everything["tests"]
+    assert (t["hidden"], t["files"], t["added"], t["removed"]) == (False, 3, 4, 0)
+    assert {k["kind"]: (k["files"], k["added"], k["removed"]) for k in t["kinds"]} == kinds
+    assert t["kinds"][0]["kind"] == "Python"  # the biggest first
 
     data = client.get(f"/api/w/{wid}/diff", params={"tests": "false"}).json()
     assert _paths(data["files"]) == {"a.txt", "b.txt", "c.txt", "src/thing.go"}
     assert set(data["review"]) == set(data["shas"]) == _paths(data["files"])
     assert "test_a.py" not in data["diff"] and "thing_test.go" not in data["diff"]
-    assert data["hidden_tests"] == {"files": 3, "added": 4, "removed": 0}
+    t = data["tests"]
+    assert (t["hidden"], t["files"], t["added"], t["removed"]) == (True, 3, 4, 0)
+    assert {k["kind"]: (k["files"], k["added"], k["removed"]) for k in t["kinds"]} == kinds
 
 
 def test_api_hidden_tests_reports_a_range_with_none(
@@ -1191,7 +1198,7 @@ def test_api_hidden_tests_reports_a_range_with_none(
     wid = wt_id(config, "proj")
     data = client.get(f"/api/w/{wid}/diff", params={"start": "HEAD~3", "end": "HEAD~2", "tests": "false"}).json()
     assert _paths(data["files"]) == {"c.txt"}
-    assert data["hidden_tests"] == {"files": 0, "added": 0, "removed": 0}
+    assert data["tests"] == {"hidden": True, "files": 0, "added": 0, "removed": 0, "kinds": []}
 
 
 def test_with_and_without_tests_do_not_share_a_cache_entry(
@@ -1221,7 +1228,7 @@ def test_hide_tests_control_follows_the_config(
     assert 'id="hide-tests"' not in client.get(f"/w/{wid}").text
     # No patterns means nothing to hide, and nothing to report as hidden.
     body = client.get(f"/api/w/{wid}/diff", params={"tests": "false"}).json()
-    assert "test_a.py" in _paths(body["files"]) and body["hidden_tests"] is None
+    assert "test_a.py" in _paths(body["files"]) and body["tests"] is None
 
 
 def _with_gh(tmp_path: Path, gh: Path, **features: object) -> None:

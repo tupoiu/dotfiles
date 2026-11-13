@@ -146,8 +146,11 @@ pickers. A range that merely *ends* at a merge is a range, and unaffected.
 the code, with every file matching `tests.paths` left out. The server does the
 filtering, as git pathspecs, so the file count, the `+`/`−` totals, the
 reviewed count and the lazy-loading limit are all for what is on screen. The
-summary says what was taken out (`2 test files hidden (+1578 −0)`), or that the
-range has none, so the page never looks like the whole range. It works the same
+summary says what was taken out (`tests hidden +1578 −0`), or that the range
+has none, so the page never looks like the whole range. With tests shown, the
+same stat (`tests +1578 −0`) says how much of the range is tests. Hover it for
+the breakdown by kind: Rust, Python, TypeScript and so on, and Rust tests
+inside files. It works the same
 on every range, untracked files and a merge's remerge diff included. The
 patterns are git's glob pathspecs, not `fnmatch` like `noise`: `*` stops at a
 `/`, and a leading `**/` matches at any depth. A file renamed *into* a test path
@@ -159,7 +162,7 @@ Rust keeps its unit tests in the file they test, so *hide tests* also cuts each
 line to the end of the file, the same rule as the `loc` command. Added lines
 are judged by the new file and removed ones by the old one. A file whose only
 changes were tests goes, like a test file. The counts leave the cut lines out,
-the summary says what went (`tests in 2 Rust files hidden (+40 −3)`), and
+the tests stat includes them (as "Rust, inside files" in its breakdown), and
 expanding the last gap of a file stops where its tests start. The cut is
 skipped on a merge's remerge diff and on the structural diff.
 

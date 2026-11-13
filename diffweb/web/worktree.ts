@@ -30,10 +30,11 @@ interface DiffResponse {
   merge: boolean;
   remerge: boolean;
   files: FileInfo[];
-  hidden_tests: {
-    files: number; added: number; removed: number;
-    // Rust unit tests cut out of the files that are still shown.
-    in_file?: { files: number; added: number; removed: number };
+  // Every test line in the range, test files and Rust tests inside files,
+  // with a breakdown by kind. Null when `tests.paths` is empty.
+  tests: {
+    hidden: boolean; files: number; added: number; removed: number;
+    kinds: { kind: string; files: number; added: number; removed: number }[];
   } | null;
   // With "hide tests": the line each Rust file's tests start at.
   tests_from?: Record<string, number>;
@@ -329,9 +330,10 @@ async function renderDiff(): Promise<void> {
   const changed = states.filter((v) => v === "changed").length;
   $summary.innerHTML =
     `${files.length} files · <span class="add">+${added}</span> <span class="del">−${removed}</span>` +
+    testsStat(data) +
     ` · ${reviewed}/${files.length} reviewed` +
     (changed ? ` · <span class="warn">${changed} changed since you reviewed</span>` : "") +
-    testsNote(data) + mergeNote(data) + structuralNote(data);
+    mergeNote(data) + structuralNote(data);
 
   const renderStart = performance.now();
   textObserver.disconnect();
@@ -347,19 +349,18 @@ async function renderDiff(): Promise<void> {
   reportProfile(data.profile_id, fetchMs, performance.now() - renderStart);
 }
 
-// Say what "hide tests" took out, so the page never looks like the whole range.
-function testsNote(data: DiffResponse): string {
-  const t = data.hidden_tests;
+// How much of the range is tests, as one diffstat, and the breakdown by kind
+// on hover. With "hide tests" on, the same stat says what was taken out, so
+// the page never looks like the whole range.
+function testsStat(data: DiffResponse): string {
+  const t = data.tests;
   if (!t) return "";
-  const lines = (added: number, removed: number) =>
-    ` (<span class="add">+${added}</span> <span class="del">−${removed}</span>)`;
+  if (!t.files) return t.hidden ? ` · <span class="tests-stat">no tests in this range</span>` : "";
   const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
-  const parts: string[] = [];
-  if (t.files) parts.push(`${plural(t.files, "test file")} hidden${lines(t.added, t.removed)}`);
-  const f = t.in_file;
-  if (f?.files) parts.push(`tests in ${plural(f.files, "Rust file")} hidden${lines(f.added, f.removed)}`);
-  if (!parts.length) return ` · <span class="merge-note">no tests in this range</span>`;
-  return ` · <span class="merge-note">${parts.join(", ")}</span>`;
+  const breakdown = t.kinds.map((k) => `${k.kind}: ${plural(k.files, "file")}, +${k.added} −${k.removed}`).join("\n");
+  const title = `${t.hidden ? "Hidden by \u201chide tests\u201d" : "Tests in this range"}\n${breakdown}`;
+  return ` · <span class="tests-stat" title="${esc(title)}" tabindex="0">tests${t.hidden ? " hidden" : ""} ` +
+    `<span class="add">+${t.added}</span> <span class="del">−${t.removed}</span></span>`;
 }
 
 // Say which of the two readings of a merge commit is on screen, since the

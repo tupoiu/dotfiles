@@ -100,6 +100,8 @@ input, select {
 .summary .warn { color: var(--del); }
 .summary .merge-note { color: var(--accent); }
 .summary .merge-note code { font-size: 12px; }
+/* One diffstat for the range's tests; its title has the breakdown by kind. */
+.summary .tests-stat { cursor: help; border-bottom: 1px dotted var(--dim); }
 /* The diff itself (web/diff/render.ts). One table per file in both layouts. */
 .dw-file-list { margin-bottom: 12px; color: var(--dim); }
 .dw-file-list summary { cursor: pointer; }
