@@ -15,6 +15,7 @@ from .config import ENV_VAR, PORT_ENV_VAR, ROOTS_ENV_VAR, DiffwebConfig, config_
 
 
 BUNDLE = Path(__file__).parent / "static" / "dist" / "worktree.js"
+SHUTDOWN_SECONDS = 2
 
 
 def _version() -> str:
@@ -79,7 +80,17 @@ def main(argv: list[str] | None = None) -> None:
         # The pages would load, then do nothing: their scripts are built from web/*.ts.
         print("diffweb: page scripts not built; run `poe diffweb-build` (or `poe diffweb`)", file=sys.stderr)
     print(f"diffweb on http://{cfg.server.host}:{cfg.server.port}", flush=True)
-    uvicorn.run("diffweb.app:app", host=cfg.server.host, port=cfg.server.port, reload=args.reload)
+    uvicorn.run(
+        "diffweb.app:app",
+        host=cfg.server.host,
+        port=cfg.server.port,
+        reload=args.reload,
+        # An open diff tab holds a live-reload event stream that never ends by
+        # itself, and shutdown waits for every connection. Without a limit, a
+        # reload (or Ctrl-C) hangs while the port stays open. The page's
+        # EventSource reconnects once the new worker is up.
+        timeout_graceful_shutdown=SHUTDOWN_SECONDS,
+    )
 
 
 if __name__ == "__main__":
