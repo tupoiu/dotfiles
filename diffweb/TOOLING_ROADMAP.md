@@ -22,6 +22,42 @@ Format - one entry per session, newest first:
 
 ---
 
+## 2026-11-17 - skeleton view (Claude)
+
+- `wt switch -c` - helped: a worktree of my own, so another session's
+  uncommitted edits never mixed with mine. A fresh worktree has neither
+  `node_modules` nor `static/vendor`, and `poe diffweb-typecheck` then fails
+  with "tsc: command not found", which reads like a broken toolchain.
+  **Improve:** have `diffweb-typecheck` and `diffweb-build` say "run `bun
+  install --cwd diffweb` and `poe fetch-diffweb-assets` first" when they are
+  missing.
+- `poe diffweb-test` - helped; the extraction rules are pure functions, so nine
+  pytest cases and four bun cases ran in under two seconds, and one endpoint
+  test over a three-commit repo covered the git side (renames, the index,
+  untracked files) for the cost of a second more.
+- Playwright - helped, with a hand-written script again: `shot.ts` cannot tick
+  a box, click a name or wait for an element, and the full-page shot of a
+  43-file branch is too tall to read. The script had to sit inside `diffweb/`
+  to find the project's playwright (see the entry below).
+  **Improve:** `shot.ts --selector <css> --click <css>`, which would have
+  replaced the script.
+
+## 2026-11-17 - stacked-branch base picker (Claude)
+
+- `poe diffweb-test` / `world` fixture - helped, and found a real flaw: three
+  unrelated tests failed because the fixture's `other` worktree is a child of
+  `feature` that `feature` later moved past, which is exactly the case the new
+  heuristic cannot tell from a parent. The fixture now branches `other` off
+  master.
+- `bun diffweb/shot.ts` - did not help here. On a 1,400-file stacked branch it
+  took a full-page shot 147,043px tall, which reads as a coloured stripe. A
+  hand-written script that shot only `.controls` and drove the picker (cancel
+  a prompt, enter a bad ref) was what showed the clipped select. A script kept
+  in the scratchpad also cannot import playwright: bun resolves a different
+  cached copy without a browser, so it had to be copied into `diffweb/` to run.
+  **Improve:** a `--selector <css>` flag to shoot one element, and cap a
+  full-page shot at a few viewports.
+
 ## 2026-11-12 - stale lazy loads on live reload; first kept browser test
 
 ### From Claude
@@ -135,22 +171,6 @@ Format - one entry per session, newest first:
   so wrong that I suspected the new code. The id is
   `sha1(path)[:12]`. **Improve:** let `shot.mjs` take a worktree path and
   work out the id itself.
-
-## 2026-11-17 - stacked-branch base picker (Claude)
-
-- `poe diffweb-test` / `world` fixture - helped, and found a real flaw: three
-  unrelated tests failed because the fixture's `other` worktree is a child of
-  `feature` that `feature` later moved past, which is exactly the case the new
-  heuristic cannot tell from a parent. The fixture now branches `other` off
-  master.
-- `bun diffweb/shot.ts` - did not help here. On a 1,400-file stacked branch it
-  took a full-page shot 147,043px tall, which reads as a coloured stripe. A
-  hand-written script that shot only `.controls` and drove the picker (cancel
-  a prompt, enter a bad ref) was what showed the clipped select. A script kept
-  in the scratchpad also cannot import playwright: bun resolves a different
-  cached copy without a browser, so it had to be copied into `diffweb/` to run.
-  **Improve:** a `--selector <css>` flag to shoot one element, and cap a
-  full-page shot at a few viewports.
 
 ## 2026-09-16 - images in diffs
 
