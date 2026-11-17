@@ -92,8 +92,6 @@ Scratchpad. Add anything, however half-formed - nothing here is committed to.
 
 - HUD: a per-repo or global toggle to include team review requests
   (`review-requested:@me`), for people on small teams where those are personal.
-- HUD: CI status per PR (`statusCheckRollup.state`) next to the chip. It is one
-  more field on the details query.
 - Low prio: Merge commits: the remerge/true-diff split only applies to a single merge
   commit. A range containing several merges could offer "hide clean merges" or
   a per-commit remerge view once the stacked view exists. `--remerge-diff`

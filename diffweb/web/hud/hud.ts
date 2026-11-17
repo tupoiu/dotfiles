@@ -190,7 +190,38 @@ function fillReviews(cell: HTMLElement, d: Detail, c: Check | undefined): void {
   if (!cell.childNodes.length) cell.textContent = "—";
 }
 
+// GitHub's rollup of every check and status on the head commit.
+const CI: Record<string, [mark: string, css: string, title: string]> = {
+  SUCCESS: ["✓", "hud-ci-pass", "CI passed"],
+  FAILURE: ["✗", "hud-ci-fail", "CI failed"],
+  ERROR: ["✗", "hud-ci-fail", "CI errored"],
+  PENDING: ["●", "hud-ci-wait", "CI is running"],
+  EXPECTED: ["●", "hud-ci-wait", "CI is waiting for a check to report"],
+};
+
+// A slot after the chip, filled when the checks land. Only my open PRs that
+// are not drafts get one, because only those are checked.
+function ciSlot(cell: HTMLTableCellElement, pr: Pr): HTMLTableCellElement {
+  const slot = el("a", "hud-ci");
+  slot.dataset.ci = pr.id;
+  slot.hidden = true;
+  slot.href = `${pr.url}/checks`;
+  slot.target = "_blank";
+  slot.rel = "noopener";
+  cell.querySelector(".pr-chip")!.after(slot);
+  return cell;
+}
+
+function fillCi(slot: HTMLElement, c: Check | undefined): void {
+  const ci = c?.ci ? CI[c.ci] : undefined;
+  slot.textContent = ci?.[0] ?? "";
+  slot.className = `hud-ci ${ci?.[1] ?? ""}`;
+  slot.title = ci?.[2] ?? "";
+  slot.hidden = !ci;
+}
+
 function applyDetails(): void {
+  for (const slot of document.querySelectorAll<HTMLElement>("[data-ci]")) fillCi(slot, checks[slot.dataset.ci!]);
   const viewer = overview?.data?.viewer ?? null;
   for (const cell of document.querySelectorAll<HTMLElement>("[data-lazy]")) {
     const d = details[cell.dataset.pr!];
@@ -296,7 +327,7 @@ function render(): void {
     document.getElementById("section-mine")!,
     [...mine.prs].sort(newestFirst("updated_at")),
     ["pr", "last activity", "reviews"],
-    (pr) => row(prCell(pr), lazyCell("activity", pr), lazyCell("reviews", pr)),
+    (pr) => row(pr.status === "open" ? ciSlot(prCell(pr), pr) : prCell(pr), lazyCell("activity", pr), lazyCell("reviews", pr)),
   );
   count("count-mine", mine.prs.length, mine.total);
 

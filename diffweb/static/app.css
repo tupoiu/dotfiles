@@ -344,6 +344,10 @@ body.hide-reviewed .dw-file.is-reviewed { display: none; }
 .hud-table td { overflow-wrap: anywhere; }
 .hud-table tbody tr { cursor: default; }
 .hud-pr .pr-chip { margin: 0 8px 0 0; }
+.hud-ci { margin-right: 8px; font-weight: 700; text-decoration: none; }
+.hud-ci-pass { color: var(--add); }
+.hud-ci-fail { color: var(--del); }
+.hud-ci-wait { color: #d29922; }
 .hud-repo {
   font: 11px ui-monospace, monospace; color: var(--dim); margin-right: 8px;
 }

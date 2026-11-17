@@ -325,8 +325,9 @@ since" is that list as it is. On my own PRs, `↩ needs your reply` marks a PR
 where a person other than me spoke last and it was not an approval. Bots do not
 count either way.
 
-Last of all, a third query asks for CI on my open PRs that are not drafts, and
-`✓ ready to merge` marks the ones that can go in: every needed review is in
+Last of all, a third query asks for CI on my open PRs that are not drafts. A
+mark after the chip gives its state - ✓ passed, ✗ failed, ● running - and links
+to the PR's checks. `✓ ready to merge` marks the ones that can go in: every needed review is in
 (GitHub's review decision is *approved*, or, where the repo requires no
 reviews, one approval and no request for changes), nobody is still requested,
 the head commit's checks roll up to *success*, and GitHub says it merges
