@@ -13,6 +13,7 @@ const KEYS: [key: string, does: string][] = [
   ["s", "toggle side-by-side"],
   ["t", "hide or show test files"],
   ["n", "skeleton: the public names the range adds"],
+  ["m", "show or hide the map of where the change is"],
   ["g / G", "first / last file"],
   ["?", "this help"],
 ];
@@ -124,6 +125,7 @@ document.addEventListener("keydown", (e) => {
     case "s": toggleCheckbox("sbs"); break;
     case "t": if (!toggleCheckbox("hide-tests")) return; break;
     case "n": toggleCheckbox("skeleton"); break;
+    case "m": toggleCheckbox("show-map"); break;
     case "?": helpOverlay(); break;
     default: return;
   }

@@ -3,6 +3,7 @@ import { filePath, parseDiff, type DiffFile } from "./diff/parse.ts";
 import { addInterval, esc, renderBody, renderFile, type FileView, type Interval } from "./diff/render.ts";
 import { fileLines, highlightFile, highlightLine, languageFor, type HlLine } from "./diff/highlight.ts";
 import { skeletonHtml, type SkeletonResponse } from "./skeleton.ts";
+import { mapHtml, type MapFile } from "./flame.ts";
 
 // --- what the server sends ------------------------------------------------
 
@@ -44,6 +45,8 @@ interface DiffResponse {
   lazy: boolean;
   diff: string;
   profile_id?: string;
+  scope: string;     // the folder or file the diff is narrowed to, "" for all
+  map: MapFile[];    // the whole range, for the flame map, whatever the scope
 }
 
 interface Commit {
@@ -78,6 +81,8 @@ const $hideReviewed = byId<HTMLInputElement>("hide-reviewed");
 const $hideTests = byId<HTMLInputElement | null>("hide-tests");
 const $skeletonBox = byId<HTMLInputElement>("skeleton");
 const $skeleton = byId<HTMLElement>("skeleton-view");
+const $mapBox = byId<HTMLInputElement>("show-map");
+const $flame = byId<HTMLElement>("flame");
 const $structural = byId<HTMLInputElement | null>("structural");
 const $trueDiff = byId<HTMLInputElement>("true-diff");
 const $status = byId<HTMLElement>("status");
@@ -242,6 +247,7 @@ function syncUrl(): void {
   if ($trueDiff.checked) q.set("remerge", "0");
   if ($hideTests?.checked) q.set("tests", "0");
   if ($skeletonBox.checked) q.set("skeleton", "1");
+  if (scope) q.set("scope", scope);
   history.replaceState(null, "", `${location.pathname}?${q}`);
 }
 
@@ -298,6 +304,7 @@ function rangeQuery(): Query {
   if ($start.value) q.start = $start.value;
   if ($end.value) q.end = $end.value;
   if ($hideTests?.checked) q.tests = "false";
+  if (scope) q.scope = scope;
   return q;
 }
 
@@ -346,7 +353,9 @@ async function renderDiff(): Promise<void> {
     testsStat(data) +
     ` · ${reviewed}/${files.length} reviewed` +
     (changed ? ` · <span class="warn">${changed} changed since you reviewed</span>` : "") +
-    mergeNote(data) + structuralNote(data);
+    mergeNote(data) + structuralNote(data) + scopeNote(data);
+  lastMap = data.map ?? [];
+  drawMap();
 
   const renderStart = performance.now();
   textObserver.disconnect();
@@ -392,6 +401,13 @@ function structuralNote(data: DiffResponse): string {
   if (data.renderer !== "structural") return "";
   return ` · <span class="merge-note">structural: only syntactic changes are marked;` +
     ` reformatting shows as context (difftastic)</span>`;
+}
+
+// Say the diff is narrowed, and offer the way back.
+function scopeNote(data: DiffResponse): string {
+  if (!data.scope) return "";
+  return ` · <span class="scope-note">only <code>${esc(data.scope)}</code>` +
+    ` <button type="button" class="linkish" id="scope-clear">show all</button></span>`;
 }
 
 // The server can time its own work but not the two stages the user waits
@@ -834,6 +850,52 @@ $base.addEventListener("change", async () => {
 });
 $start.addEventListener("change", () => { syncScopes(); render(); });
 $end.addEventListener("change", () => { syncScopes(); render(); });
+
+// --- flame map --------------------------------------------------------------
+
+// Where the change is, by project, above the diff. Clicking a bar narrows the
+// diff to that folder or file; the narrowing rides in the URL, while showing
+// the map and its depth are remembered per browser.
+let scope = params.get("scope") ?? "";
+let lastMap: MapFile[] | null = null;
+const MAP_KEY = "diffweb.map";
+const LEVELS_KEY = "diffweb.map-levels";
+let levels = 3;
+try {
+  $mapBox.checked = localStorage.getItem(MAP_KEY) !== "0";  // on unless turned off
+  levels = Number(localStorage.getItem(LEVELS_KEY)) || 3;
+} catch { $mapBox.checked = true; }
+
+function drawMap(): void {
+  $flame.hidden = !$mapBox.checked || lastMap === null;
+  if (lastMap === null) return;
+  $flame.innerHTML = mapHtml(lastMap, levels, scope, el.dataset.wtName || "repo root");
+}
+
+function setScope(next: string): void {
+  scope = next;
+  void render();
+}
+
+$mapBox.addEventListener("change", () => {
+  try { localStorage.setItem(MAP_KEY, $mapBox.checked ? "1" : "0"); } catch { /* private mode */ }
+  drawMap();
+});
+$flame.addEventListener("click", (e) => {
+  const t = e.target as Element;
+  const lv = t.closest<HTMLElement>("[data-levels]");
+  if (lv) {
+    levels = Number(lv.dataset.levels);
+    try { localStorage.setItem(LEVELS_KEY, String(levels)); } catch { /* private mode */ }
+    drawMap();
+    return;
+  }
+  const bar = t.closest<HTMLElement>(".fbar[data-scope]");
+  if (bar) setScope(bar.dataset.scope === scope ? "" : bar.dataset.scope!);
+});
+$summary.addEventListener("click", (e) => {
+  if ((e.target as Element).closest("#scope-clear")) setScope("");
+});
 
 // --- skeleton ---------------------------------------------------------------
 

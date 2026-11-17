@@ -11,6 +11,7 @@
   --em-pink: #bf3989;   --em-pink-soft: #ffeef8;
   --warn: #9a6700;
   --ink-soft: #3d444d;
+  --k-code: #2f6feb; --k-test: #8250df; --k-docs: #0b7f86;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -26,6 +27,7 @@
     --em-pink: #ff7eb6;   --em-pink-soft: #2e1624;
     --warn: #d29922;
     --ink-soft: #b1bac4;
+    --k-code: #6ea8ff; --k-test: #b392f0; --k-docs: #39c5cf;
   }
 }
 * { box-sizing: border-box; }
@@ -335,6 +337,7 @@ body.hide-reviewed .dw-file.is-reviewed { display: none; }
 .seg-numstat { background: var(--accent); }
 .seg-shas { background: #1f9c9c; }
 .seg-diff { background: var(--add); }
+.seg-map { background: var(--em-orange); }
 .seg-serialise { background: #d29922; }
 .seg-network { background: var(--dim); }
 .seg-render { background: var(--del); }
@@ -433,3 +436,52 @@ body.hide-reviewed .dw-file.is-reviewed { display: none; }
 .only-undoc .skel-item:not(.nodoc), .only-undoc .skel-group.all-doc { display: none; }
 /* A definition jumped to from the skeleton, for a moment. */
 tr.dw-target > td { box-shadow: inset 0 0 0 9999px color-mix(in srgb, var(--accent) 18%, transparent); }
+
+/* The flame map: one box per project, an icicle of its folders inside. */
+.flame { display: grid; gap: 8px; margin-bottom: 12px; }
+.flame {
+  --k-code-soft: color-mix(in srgb, var(--k-code) 30%, var(--bg));
+  --k-test-soft: color-mix(in srgb, var(--k-test) 30%, var(--bg));
+  --k-docs-soft: color-mix(in srgb, var(--k-docs) 30%, var(--bg));
+}
+.flame-ctl { display: flex; gap: 8px 14px; align-items: center; flex-wrap: wrap; font-size: 12px; }
+.flame .dim { color: var(--dim); }
+.flame .levels-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.flame .levels-seg button {
+  font: inherit; font-size: 12px; border: 0; background: none; color: var(--dim);
+  padding: 1px 9px; cursor: pointer;
+}
+.flame .levels-seg button + button { border-left: 1px solid var(--line); }
+.flame .levels-seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--fg); font-weight: 600; }
+.mapkey { display: inline-flex; gap: 12px; color: var(--dim); }
+.mapkey span::before {
+  content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px;
+}
+.mapkey .k-code::before { background: var(--k-code); }
+.mapkey .k-test::before { background: var(--k-test); }
+.mapkey .k-docs::before { background: var(--k-docs); }
+.projects { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-start; }
+.pbox.others .pn { color: var(--dim); }
+.pbox { border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px 8px; display: grid; gap: 6px; min-width: 0; }
+.phd { display: flex; gap: 4px 10px; align-items: baseline; flex-wrap: wrap; min-width: 0; }
+.phd .pn { font: 700 12px ui-monospace, monospace; overflow-wrap: anywhere; }
+.phd .split { font: 11px ui-monospace, monospace; color: var(--dim); display: inline-flex; gap: 8px; flex-wrap: wrap; }
+.phd .split b { font-weight: 700; }
+.phd .split .c b { color: var(--k-code); }
+.phd .split .t b { color: var(--k-test); }
+.phd .split .o b { color: var(--k-docs); }
+.fnode { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.fkids { display: flex; gap: 1px; min-width: 0; }
+.fbar {
+  display: block; width: 100%; height: 22px; border: 0; border-radius: 2px; padding: 0 5px; min-width: 0;
+  font: 10px/22px ui-monospace, monospace; color: var(--fg); text-align: left; cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.fbar:hover { filter: brightness(.92); }
+@media (prefers-color-scheme: dark) { .fbar:hover { filter: brightness(1.25); } }
+.fbar.more {
+  cursor: default; color: var(--dim);
+  background: repeating-linear-gradient(135deg, var(--panel) 0 4px, var(--bg) 4px 8px);
+}
+.fbar[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: -2px; }
+.summary .scope-note code { font-size: 12px; }

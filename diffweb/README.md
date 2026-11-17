@@ -372,6 +372,30 @@ docstring changed on an existing name is not shown. The rules are in
 `skeleton.py` and the endpoint is `/api/w/{id}/skeleton`, which takes the same
 `base`, `start`, `end` and `tests` as `/diff`.
 
+### From Claude: flame map
+
+Above the diff, the *map* (tickbox and key `m`, on by default and remembered
+per browser) shows where the change is. Each project - the nearest folder up
+from a file that holds a `pyproject.toml`, `package.json` or `Cargo.toml` on
+the end side of the range, or the repo root, shown as the worktree's name - is
+a box sized by its lines, headed by its code, tests and docs split. Inside is
+an icicle: the first row is the project's top-level entries, and each row below
+splits the bar above it, widths by lines added plus removed. *levels* (1-4,
+default 3, remembered) caps the depth; deeper lines are summed into the last
+row. Siblings under 4% of their parent share one striped *+N small* bar whose
+hover lists them, and past eight projects the smallest share a *+N smaller
+projects* box with a bar each.
+
+Each bar is a blend of its own code, tests and docs (tests are what
+`tests.paths` matches, docs are `.md`, `.rst`, `.txt` and lockfiles). Clicking
+one narrows the diff to that folder or file: the files, counts, review count,
+lazy loading and the skeleton all follow, because git does the narrowing, as it
+does for *hide tests*. Click it again, or *show all* in the summary, to widen
+it. The narrowing rides in the URL as `scope=`. The map itself always shows the
+whole range (less the tests, with *hide tests* on), and comes in the diff
+response's `map`, each file with its kind and project, so it costs no second
+request. The rules are in `projects.py` and `web/flame.ts`.
+
 ## Alternatives that were tried first
 
 - **Forgejo** (`codeberg.org/forgejo/forgejo:9` under docker) - genuinely nice
@@ -396,6 +420,7 @@ docstring changed on an existing name is not shown. The rules are in
 | `gitio.py` | argv-only git wrappers, worktree discovery, ref validation |
 | `structural.py` | difftastic JSON + the two blobs -> unified diff hunks, spliced into git's patch |
 | `skeleton.py` | the public names a range adds, with signatures and docstrings, for the skeleton view |
+| `projects.py` | each changed file's project and kind (code, tests, docs), for the flame map |
 | `state.py` | SQLite reviewed-state and per-worktree base-ref overrides |
 | `app.py` | FastAPI routes |
 | `hud/` | the PR dashboard: `github.py` (GraphQL queries + parsing), `service.py` (state DB cache, worktree matching), `routes.py`, `templates/hud.html` |
@@ -407,6 +432,7 @@ docstring changed on an existing name is not shown. The rules are in
 | `web/diff/highlight.ts` | highlight.js over whole files, cut into lines |
 | `web/keys.ts` | keyboard navigation, imported by `worktree.ts` |
 | `web/skeleton.ts` | draws the skeleton view from `/api/w/{id}/skeleton` |
+| `web/flame.ts` | the flame map: projects, the icicle's folding, and its HTML |
 | `static/`, `templates/` | the UI; `static/vendor/` and `static/dist/` are gitignored, populated by `poe fetch-diffweb-assets` and `poe diffweb-build` |
 | `package.json`, `tsconfig.json` | the bun build, plus dev-only tooling: `tsc`, playwright |
 | `shot.ts` | screenshots the running app (see below) |

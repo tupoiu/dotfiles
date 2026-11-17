@@ -24,7 +24,7 @@ from fastapi.responses import (
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import forge, gitio, profiling, rust_tests, skeleton
+from . import forge, gitio, profiling, projects, rust_tests, skeleton
 from .config import DiffwebConfig, load_config
 from .gitio import INDEX, UPSTREAM, WORKTREE, Worktree
 from .hud import routes as hud_routes
@@ -317,6 +317,39 @@ def api_commits(wt_id: str, base: str | None = None, config: DiffwebConfig = Dep
     return {"base": base, "merge_base": mb, "commits": gitio.commits(wt.path, mb, "HEAD")}
 
 
+def _scope(scope: str | None) -> str:
+    """A folder or file the page narrowed the diff to, from the flame map."""
+    if not scope:
+        return ""
+    scope = scope.strip("/")
+    parts = scope.split("/")
+    if scope.startswith(("-", ":")) or any(c in scope for c in "\0\n") or ".." in parts or "" in parts:
+        raise ValueError(f"refusing suspicious scope: {scope!r}")
+    return scope
+
+
+def in_scope(path: str, scope: str) -> bool:
+    return not scope or path == scope or path.startswith(f"{scope}/")
+
+
+def _map_rows(
+    wt: Worktree, end: str, rows: list[dict[str, object]], tests: set[str]
+) -> list[dict[str, object]]:
+    """The flame map's data: each file's lines, kind and project."""
+    paths = [gitio.rename_target(str(r["path"])) for r in rows]
+    owner = projects.project_of(wt.path, end, paths)
+    return [
+        {
+            "path": p,
+            "added": r["added"] or 0,
+            "removed": r["removed"] or 0,
+            "kind": projects.kind_of(p, tests),
+            "project": owner[p],
+        }
+        for p, r in zip(paths, rows)
+    ]
+
+
 @app.get("/api/w/{wt_id}/diff")
 def api_diff(
     wt_id: str,
@@ -326,11 +359,13 @@ def api_diff(
     renderer: str = "line",
     remerge: bool | None = None,
     tests: bool = True,
+    scope: str | None = None,
     files: list[str] | None = Query(default=None),
     config: DiffwebConfig = Depends(get_config),
 ) -> Any:
     wt = find_worktree(wt_id, config)
     state = get_state()
+    scope = _scope(scope)
     # Per-file lazy loads are follow-up requests, not the wait we are measuring.
     timer = profiling.Timer(enabled=config.features.profiling and not files)
 
@@ -348,7 +383,10 @@ def api_diff(
     # filtering, so the counts, review state and patch cannot disagree.
     test_patterns = config.tests.paths
     patterns = test_patterns if not tests else []
-    spec = gitio.test_pathspecs(patterns, exclude=True)
+    unscoped = gitio.test_pathspecs(patterns, exclude=True)
+    # `scope` narrows every view of the range the same way, and git does it,
+    # so the counts, review state and patch agree. The map alone stays whole.
+    spec = [f":(literal){scope}", *unscoped] if scope else unscoped
 
     if files and renderer == "line":
         # A lazy load of some files. The page has the range's stats, shas and
@@ -373,7 +411,13 @@ def api_diff(
         stats = range_numstat(spec)
         # The test files, hidden or not, so the page can say how much of the
         # range is tests (and, when they are hidden, what was left out).
-        test_rows = range_numstat(gitio.test_pathspecs(test_patterns, exclude=False)) if test_patterns else None
+        all_test_rows = range_numstat(gitio.test_pathspecs(test_patterns, exclude=False)) if test_patterns else None
+        # Two positive pathspecs would be "either", not "both": scope in Python.
+        test_rows = (
+            [r for r in all_test_rows if in_scope(gitio.rename_target(str(r["path"])), scope)]
+            if all_test_rows is not None
+            else None
+        )
         for row in stats:
             row["noisy"] = gitio.is_noisy(str(row["path"]), config.noise.collapse_by_default)
             row["emphasis"] = gitio.emphasis_for(gitio.rename_target(str(row["path"])), config.emphasis)
@@ -441,11 +485,17 @@ def api_diff(
             if lazy:
                 diff = ""
 
+    with timer.stage("map"):
+        test_set = {gitio.rename_target(str(r["path"])) for r in all_test_rows or []}
+        map_rows = range_numstat(unscoped) if scope else stats
+
     payload = {
         "renderer": renderer,
         "start": s,
         "end": e,
         "base": base,
+        "scope": scope,
+        "map": _map_rows(wt, e, map_rows, test_set),
         "merge": merge,
         "remerge": remerge,
         "files": stats,
@@ -586,19 +636,21 @@ def api_skeleton(
     start: str | None = None,
     end: str | None = None,
     tests: bool = True,
+    scope: str | None = None,
     config: DiffwebConfig = Depends(get_config),
 ) -> Any:
     """The public names the range adds, per file, with signature and docstring
     (see skeleton.py). Takes the same range as /diff; `tests=false` leaves the
-    test files out, as it does there."""
+    test files out and `scope` narrows it to a folder, as they do there."""
     wt = find_worktree(wt_id, config)
+    scope = _scope(scope)
     base = base or get_state().base_ref(wt_id) or gitio.auto_base(wt.path)
     s, e = _range(wt, base, start, end)
     spec = gitio.test_pathspecs(config.tests.paths, exclude=True) if not tests else []
     changes = {
         path: c
         for path, c in gitio.raw_changes(wt.path, s, e, spec).items()
-        if c["status"] != "D" and skeleton.supported(path)
+        if c["status"] != "D" and skeleton.supported(path) and in_scope(path, scope)
     }
     paths = list(changes)
     olds = {p: (c["old_path"] or p) for p, c in changes.items()}

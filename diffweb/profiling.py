@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Iterator
 
 # Stages in the order they happen, which is also the order the bar is drawn in.
-SERVER_STAGES = ("refs", "numstat", "shas", "diff", "serialise")
+SERVER_STAGES = ("refs", "numstat", "shas", "diff", "map", "serialise")
 
 # The catalog page's stages. It is rendered on the server, so these are all of
 # its profile; there is no client half to wait for.
