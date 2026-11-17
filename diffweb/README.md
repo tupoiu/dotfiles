@@ -378,7 +378,12 @@ Above the diff, the *map* (tickbox and key `m`, on by default and remembered
 per browser) shows where the change is. Each project - the nearest folder up
 from a file that holds a `pyproject.toml`, `package.json` or `Cargo.toml` on
 the end side of the range, or the repo root, shown as the worktree's name - is
-a box sized by its lines, headed by its code, tests and docs split. Inside is
+a box sized by its lines, headed by its code, tests and docs split. Sizes are
+truly proportional, so a project beside a 75k-line one may be a few pixels
+wide; it only grows past its share to keep each of its bars at least 3px and
+hoverable. Hovering or focusing any bar or box header shows its path and
+diffstat at once (a folder or project adds its file count and split), in a
+tooltip drawn by the page rather than a slow native `title`. Inside is
 an icicle: the first row is the project's top-level entries, and each row below
 splits the bar above it, widths by lines added plus removed. *levels* (1-4,
 default 3, remembered) caps the depth; deeper lines are summed into the last

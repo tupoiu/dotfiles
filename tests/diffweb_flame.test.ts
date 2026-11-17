@@ -1,7 +1,7 @@
 // The flame map's folding and HTML (web/flame.ts). Plain strings, no browser.
 
 import { expect, test } from "bun:test";
-import { MAX_PROJECTS, buildProjects, fold, mapHtml, type Bar, type MapFile } from "../diffweb/web/flame.ts";
+import { MAX_PROJECTS, buildProjects, diffstat, fold, mapHtml, minWidth, tipFor, type Bar, type MapFile } from "../diffweb/web/flame.ts";
 
 const f = (path: string, lines: number, project = "", kind: MapFile["kind"] = "code"): MapFile =>
   ({ path, added: lines, removed: 0, kind, project });
@@ -44,11 +44,13 @@ test("one small sibling is drawn as itself, not as +1", () => {
 
 test("the HTML names the root after the worktree and marks the scoped bar", () => {
   const html = mapHtml(FILES, 2, "api/src", "dotfiles");
-  expect(html).toContain('<span class="pn" title="the repo root">dotfiles</span>');
+  expect(html).toContain('<span class="pn">dotfiles</span>');
+  expect(html).toContain('data-tip="dotfiles (the repo root)');
   expect(html).toContain('data-scope="api/src" aria-pressed="true"');
   expect(html).toContain('data-scope="api/tests" aria-pressed="false"');
   expect(html).toContain("code <b>800</b>");
-  expect(html).toContain('<span class="fbar more" title="3 small entries:');
+  expect(html).toContain('<span class="fbar more" tabindex="0" data-tip="3 small entries · +30 −0\napi/a.txt  +10 −0');
+  expect(html).not.toContain(" title="); // the tooltip is drawn by hand, at once
   expect(html).toContain('data-levels="2" aria-pressed="true"');
 });
 
@@ -67,4 +69,28 @@ test("past the cap, the smallest projects share one box, a bar each", () => {
   expect(html).toContain('data-scope="t29" aria-pressed="false"');
   expect(html).toContain(">t29/ 1</button>");
   expect(html).not.toContain("+30 small<");
+});
+
+test("tooltips: a file's path, diffstat and kind; a folder's count, diffstat and split", () => {
+  const api = buildProjects([...FILES, { ...f("api/src/app.py", 0, "api"), path: "api/src/z.py", removed: 7 }])[0]!.root;
+  const app = api.kids.get("src")!.kids.get("app.py")!;
+  expect(tipFor(app)).toBe("api/src/app.py\n+500 −0 · code");
+  expect(tipFor(api.kids.get("src")!)).toBe("api/src/\n3 files · +800 −7\ncode 807 · tests 0 · docs 0");
+  expect(diffstat(FILES)).toBe("+1,000 −0");
+});
+
+test("boxes are exactly proportional to their lines", () => {
+  const html = mapHtml([f("infra/a.py", 75000, "infra"), f("web/b.ts", 30, "web")], 1, "", "r");
+  expect(html).toContain('class="pbox" style="flex: 75000 1 0; min-width: 6px"');
+  expect(html).toContain('class="pbox" style="flex: 30 1 0; min-width: 6px"');
+});
+
+test("a box is at least wide enough for every bar in it to be hovered", () => {
+  const big = Array.from({ length: MAX_PROJECTS - 1 }, (_, i) => f(`big${i}/a.py`, 100000, `big${i}`));
+  const tiny = Array.from({ length: 26 }, (_, i) => f(`t${i}/a.py`, 2, `t${i}`));
+  // 26 bars of 3px, 25 gaps of 1px, and 2px of margin.
+  expect(mapHtml([...big, ...tiny], 1, "", "r")).toContain('class="pbox others" style="flex: 52 1 0; min-width: 105px"');
+  const deep = buildProjects([f("a/x/1.py", 5), f("a/x/2.py", 5), f("a/x/3.py", 5)])[0]!.root;
+  // a/ sits over x/, which sits over three files: 3 + 1 + 3 + 1 + 3.
+  expect(minWidth(fold(deep, 3)[0]!)).toBe(11);
 });

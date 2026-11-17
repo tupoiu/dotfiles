@@ -3,7 +3,7 @@ import { filePath, parseDiff, type DiffFile } from "./diff/parse.ts";
 import { addInterval, esc, renderBody, renderFile, type FileView, type Interval } from "./diff/render.ts";
 import { fileLines, highlightFile, highlightLine, languageFor, type HlLine } from "./diff/highlight.ts";
 import { skeletonHtml, type SkeletonResponse } from "./skeleton.ts";
-import { mapHtml, type MapFile } from "./flame.ts";
+import { attachTips, mapHtml, type MapFile } from "./flame.ts";
 
 // --- what the server sends ------------------------------------------------
 
@@ -877,6 +877,7 @@ function setScope(next: string): void {
   void render();
 }
 
+attachTips($flame);
 $mapBox.addEventListener("change", () => {
   try { localStorage.setItem(MAP_KEY, $mapBox.checked ? "1" : "0"); } catch { /* private mode */ }
   drawMap();
