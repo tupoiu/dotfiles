@@ -172,6 +172,40 @@ def test_rust_pub_items_with_doc_comments() -> None:
     assert by["Kind"].doc == ""
 
 
+RS_IMPLS = src('''
+    pub struct Backend;
+
+    impl<T: Into<String>> Backend<T> {
+        /// Make one.
+        pub fn new() -> Self {
+            fn helper() {}
+        }
+    }
+
+    impl fmt::Display for crate::errors::Backend {
+        pub fn fmt(&self) {}
+    }
+
+    impl Marker for Backend {}
+
+    pub fn free() {}
+''')
+
+
+def test_rust_methods_carry_their_impl_type() -> None:
+    names = skeleton.rust_names(RS_IMPLS)
+    assert [(n.qual, n.kind) for n in names] == [
+        ("Backend", "struct"), ("Backend::new", "method"), ("Backend::fmt", "method"), ("free", "function"),
+    ]
+    assert names[1].doc == "Make one."
+
+
+def test_a_new_rust_method_with_a_known_name_is_new() -> None:
+    before = "pub struct A;\nimpl A {\n    pub fn new() {}\n}\n"
+    after = before + "pub struct B;\nimpl B {\n    pub fn new() {}\n}\n"
+    assert quals(skeleton.added_names("lib.rs", before, after).names) == ["B", "B::new"]
+
+
 # --- only what the range adds ---------------------------------------------
 
 

@@ -364,7 +364,7 @@ Public means a Python `def` or `class` with no leading `_`, at module level or
 in a public class (a function nested in a function is a local), a TypeScript
 `export function` or exported class, and a Rust `pub fn`, `pub struct`, `pub
 enum` or `pub trait`. Python is read with `ast`; the docs of the other two are
-the `//`, `/** */` or `///` comments right above, read with line rules. A name
+the `//`, `/** */` or `///` comments right above, read with line rules. A Rust method shows the type its `impl` is for (`impl Trait for X` gives `X`). A name
 is added when the start of the range does not define it in that file, so a
 docstring changed on an existing name is not shown. The rules are in
 `skeleton.py` and the endpoint is `/api/w/{id}/skeleton`, which takes the same

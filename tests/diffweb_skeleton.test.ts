@@ -25,6 +25,12 @@ test("names link to their line, with the class before a method", () => {
   expect(html).toContain("2 public names added · 1 without a docstring");
 });
 
+test("a Rust method shows its impl type", () => {
+  const n = { kind: "method", name: "new", qual: "Backend::new", signature: "fn new() -> Self", doc: "", line: 3 };
+  const html = skeletonHtml({ names: 1, documented: 0, files: [{ path: "a.rs", documented: 0, error: "", names: [n] }] });
+  expect(html).toContain('fn <span class="owner">Backend::</span><span class="nm">new</span>() -&gt; Self');
+});
+
 test("a name with no docstring is flagged, and a fully documented file can hide", () => {
   const html = skeletonHtml(data);
   expect(html).toContain('<div class="skel-item nodoc">');

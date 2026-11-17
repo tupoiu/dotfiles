@@ -33,7 +33,7 @@ from pathlib import PurePosixPath
 class Name:
     kind: str       # function, method, class, struct, enum, trait
     name: str       # as written, e.g. `mute`
-    qual: str       # with its class, e.g. `State.mute`; what "new" compares
+    qual: str       # with its owner, `State.mute` or `Backend::new`; what "new" compares
     signature: str  # `def mute(self, pr_id: str) -> None`, without a body
     doc: str        # first paragraph of the docstring, "" when there is none
     line: int       # 1-based, the `def`/`function`/`fn` line on the end side
@@ -210,10 +210,45 @@ _RS_TYPE = re.compile(r"^\s*pub\s+(struct|enum|trait)\s+([A-Za-z_]\w*)")
 _RS_ATTR = re.compile(r"^#!?\[")
 
 
+_RS_IMPL = re.compile(r"^(\s*)impl\b")
+
+
+def _impl_type(line: str) -> str | None:
+    """The type an `impl` line is for: `Foo` for `impl<T: Into<X>> Foo<T> {`,
+    and `X` for `impl Trait for X`. None when the line is no impl."""
+    m = _RS_IMPL.match(line)
+    if not m:
+        return None
+    rest = line[m.end() :].lstrip()
+    if rest.startswith("<"):  # the impl's own generics, which may nest
+        depth = 0
+        for j, ch in enumerate(rest):
+            depth += {"<": 1, ">": -1}.get(ch, 0)
+            if depth == 0:
+                rest = rest[j + 1 :]
+                break
+    rest = re.split(r"[{]|\swhere\s", rest)[0]
+    target = re.split(r"\sfor\s", rest)[-1].strip()
+    name = re.match(r"[&\w:]+", target)
+    return name.group(0).lstrip("&").split("::")[-1] if name else None
+
+
 def rust_names(text: str) -> list[Name]:
     lines = text.splitlines()
     out: list[Name] = []
+    # The impl blocks open around the current line, as (indent, type). An impl
+    # ends at the `}` on its own indent - rustfmt's layout, which is the norm.
+    impls: list[tuple[int, str]] = []
     for i, line in enumerate(lines):
+        indent = len(line) - len(line.lstrip())
+        if impls and line.strip().startswith("}") and indent == impls[-1][0]:
+            impls.pop()
+            continue
+        owner = _impl_type(line)
+        if owner is not None:
+            if not line.rstrip().endswith("}"):  # not a one-line `impl X {}`
+                impls.append((indent, owner))
+            continue
         fn = _RS_FN.match(line)
         ty = None if fn else _RS_TYPE.match(line)
         if not (fn or ty):
@@ -228,7 +263,9 @@ def rust_names(text: str) -> list[Name]:
             sig = _signature_from(lines, i, stops="{;(")
         sig = re.sub(r"^pub\s+", "", sig.strip())
         doc = _comment_above(lines, i, line_prefix="///", skip=_RS_ATTR)
-        out.append(Name(kind, name, name, sig, doc, i + 1))
+        inside = [t for at, t in impls if at < indent]
+        qual = f"{inside[-1]}::{name}" if fn and inside else name
+        out.append(Name("method" if qual != name else kind, name, qual, sig, doc, i + 1))
     return out
 
 

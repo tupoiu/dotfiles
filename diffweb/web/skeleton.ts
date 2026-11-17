@@ -8,7 +8,7 @@ import { esc } from "./diff/render.ts";
 export interface SkeletonName {
   kind: string;
   name: string;
-  qual: string;       // `State.mute` for a method
+  qual: string;       // `State.mute` or `Backend::new` for a method
   signature: string;
   doc: string;
   line: number;       // end side, 1-based
@@ -32,7 +32,8 @@ export interface SkeletonResponse {
 function signatureHtml(n: SkeletonName): string {
   const at = n.signature.indexOf(n.name);
   if (at < 0) return esc(n.signature);
-  const owner = n.qual.endsWith(`.${n.name}`) ? n.qual.slice(0, -n.name.length) : "";
+  // `State.` for a Python method, `Backend::` for a Rust one.
+  const owner = n.qual !== n.name && n.qual.endsWith(n.name) ? n.qual.slice(0, -n.name.length) : "";
   return esc(n.signature.slice(0, at)) +
     (owner ? `<span class="owner">${esc(owner)}</span>` : "") +
     `<span class="nm">${esc(n.name)}</span>` +
