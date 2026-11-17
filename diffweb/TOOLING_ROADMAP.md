@@ -136,6 +136,22 @@ Format - one entry per session, newest first:
   `sha1(path)[:12]`. **Improve:** let `shot.mjs` take a worktree path and
   work out the id itself.
 
+## 2026-11-17 - stacked-branch base picker (Claude)
+
+- `poe diffweb-test` / `world` fixture - helped, and found a real flaw: three
+  unrelated tests failed because the fixture's `other` worktree is a child of
+  `feature` that `feature` later moved past, which is exactly the case the new
+  heuristic cannot tell from a parent. The fixture now branches `other` off
+  master.
+- `bun diffweb/shot.ts` - did not help here. On a 1,400-file stacked branch it
+  took a full-page shot 147,043px tall, which reads as a coloured stripe. A
+  hand-written script that shot only `.controls` and drove the picker (cancel
+  a prompt, enter a bad ref) was what showed the clipped select. A script kept
+  in the scratchpad also cannot import playwright: bun resolves a different
+  cached copy without a browser, so it had to be copied into `diffweb/` to run.
+  **Improve:** a `--selector <css>` flag to shoot one element, and cap a
+  full-page shot at a few viewports.
+
 ## 2026-09-16 - images in diffs
 
 - `poe diffweb-test` / `world` fixture - helped. A helper that commits, renames,
