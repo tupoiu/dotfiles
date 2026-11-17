@@ -28,13 +28,17 @@ export interface SkeletonResponse {
   documented: number;
 }
 
-// The signature with the name picked out, and a method's class before it.
-function signatureHtml(n: SkeletonName): string {
+// The signature as highlighted code: the keyword before the name (`def`,
+// `async function`, `struct`...) in its own colour, then a method's owner,
+// dimmed, then the name, then the rest as plain text.
+export function signatureHtml(n: SkeletonName): string {
   const at = n.signature.indexOf(n.name);
   if (at < 0) return esc(n.signature);
   // `State.` for a Python method, `Backend::` for a Rust one.
   const owner = n.qual !== n.name && n.qual.endsWith(n.name) ? n.qual.slice(0, -n.name.length) : "";
-  return esc(n.signature.slice(0, at)) +
+  const before = n.signature.slice(0, at);
+  const keyword = before.trimEnd();
+  return (keyword ? `<span class="k">${esc(keyword)}</span>${esc(before.slice(keyword.length))}` : esc(before)) +
     (owner ? `<span class="owner">${esc(owner)}</span>` : "") +
     `<span class="nm">${esc(n.name)}</span>` +
     esc(n.signature.slice(at + n.name.length));

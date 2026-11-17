@@ -1,7 +1,7 @@
 // The skeleton view's HTML (web/skeleton.ts). Plain strings, so no browser.
 
 import { expect, test } from "bun:test";
-import { docHtml, skeletonHtml, type SkeletonResponse } from "../diffweb/web/skeleton.ts";
+import { docHtml, signatureHtml, skeletonHtml, type SkeletonResponse } from "../diffweb/web/skeleton.ts";
 
 const data: SkeletonResponse = {
   names: 2,
@@ -20,7 +20,7 @@ const data: SkeletonResponse = {
 test("names link to their line, with the class before a method", () => {
   const html = skeletonHtml(data);
   expect(html).toContain('data-path="diffweb/state.py" data-line="7"');
-  expect(html).toContain('def <span class="owner">State.</span><span class="nm">mute</span>(self) -&gt; None');
+  expect(html).toContain('<span class="k">def</span> <span class="owner">State.</span><span class="nm">mute</span>(self) -&gt; None');
   expect(html).not.toContain("documented</span>");  // no per-file count
   expect(html).toContain("2 public names added · 1 without a docstring");
 });
@@ -28,7 +28,7 @@ test("names link to their line, with the class before a method", () => {
 test("a Rust method shows its impl type", () => {
   const n = { kind: "method", name: "new", qual: "Backend::new", signature: "fn new() -> Self", doc: "", line: 3 };
   const html = skeletonHtml({ names: 1, documented: 0, files: [{ path: "a.rs", documented: 0, error: "", names: [n] }] });
-  expect(html).toContain('fn <span class="owner">Backend::</span><span class="nm">new</span>() -&gt; Self');
+  expect(html).toContain('<span class="k">fn</span> <span class="owner">Backend::</span><span class="nm">new</span>() -&gt; Self');
 });
 
 test("a name with no docstring is flagged, and a fully documented file can hide", () => {
@@ -47,4 +47,12 @@ test("docstrings draw backticks as code and escape everything else", () => {
 
 test("an empty range says so", () => {
   expect(skeletonHtml({ names: 0, documented: 0, files: [] })).toContain("adds no public names");
+});
+
+test("the keyword before the name is coloured as code, whatever its length", () => {
+  const n = (signature: string, name: string) => ({ kind: "function", name, qual: name, signature, doc: "", line: 1 });
+  expect(signatureHtml(n("async function load(p: string): Promise<void>", "load")))
+    .toBe('<span class="k">async function</span> <span class="nm">load</span>(p: string): Promise&lt;void&gt;');
+  expect(signatureHtml(n("struct Span<T>", "Span"))).toBe('<span class="k">struct</span> <span class="nm">Span</span>&lt;T&gt;');
+  expect(signatureHtml(n("odd", "odd"))).toBe('<span class="nm">odd</span>');
 });
