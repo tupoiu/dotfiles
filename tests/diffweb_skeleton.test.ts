@@ -21,7 +21,7 @@ test("names link to their line, with the class before a method", () => {
   const html = skeletonHtml(data);
   expect(html).toContain('data-path="diffweb/state.py" data-line="7"');
   expect(html).toContain('def <span class="owner">State.</span><span class="nm">mute</span>(self) -&gt; None');
-  expect(html).toContain("1/2 documented");
+  expect(html).not.toContain("documented</span>");  // no per-file count
   expect(html).toContain("2 public names added · 1 without a docstring");
 });
 

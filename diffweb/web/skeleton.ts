@@ -64,8 +64,7 @@ export function skeletonHtml(data: SkeletonResponse): string {
     );
     if (f.error) items.push(`<div class="skel-item nodoc"><div class="doc">${esc(f.error)}</div></div>`);
     return `<section class="skel-group${allDoc ? " all-doc" : ""}">` +
-      `<div class="skel-file">${esc(f.path)}` +
-      `<span class="cov">${f.documented}/${f.names.length} documented</span></div>` +
+      `<div class="skel-file">${esc(f.path)}</div>` +
       items.join("") + `</section>`;
   });
   return head + `<div class="skel">${groups.join("")}</div>`;

@@ -354,9 +354,8 @@ are. The code is in `hud/`, apart from the diff viewer.
 The *skeleton* tickbox (key `n`) swaps the diff for its table of contents:
 every public name the range adds, grouped by file, with its signature and the
 first paragraph of its docstring. A name with no docstring shows *No
-docstring.* in amber with an amber rule, and each file says how many of its
-names are documented, so the view doubles as a docs check; *only undocumented*
-leaves just the gaps. Clicking a name shows the diff at its definition. The
+docstring.* in amber with an amber rule, so the view doubles as a docs check;
+*only undocumented* leaves just the gaps. Clicking a name shows the diff at its definition. The
 skeleton is for the same range as the diff, and *hide tests* takes the test
 files out of both. It rides in the URL as `skeleton=1`.
 

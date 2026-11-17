@@ -411,7 +411,6 @@ body.hide-reviewed .dw-file.is-reviewed { display: none; }
   font: 700 12px ui-monospace, monospace; color: var(--dim);
   display: flex; gap: 8px; align-items: baseline; overflow-wrap: anywhere;
 }
-.skel-file .cov { font: 600 10px ui-sans-serif, sans-serif; }
 .skel-item { padding: 3px 0 3px 12px; border-left: 2px solid var(--line); display: grid; gap: 1px; min-width: 0; }
 .skel-item .sg { font: 12px ui-monospace, monospace; color: var(--fg); overflow-wrap: anywhere; }
 .skel-item .sg:hover { text-decoration: none; }
