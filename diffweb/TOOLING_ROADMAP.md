@@ -41,6 +41,25 @@ Format - one entry per session, newest first:
   switched branch without moving a ref. `addopts = "-n 6"` makes
   `-p no:xdist` fail with "unrecognized arguments: -n". Use `-n0` instead.
 
+## 2026-11-17 - flame map (Claude)
+
+- `poe diffweb-test` - helped, twice over: a bun test with real numbers caught
+  "3 small entrys" in a hover, and a second showed my first test of the shared
+  projects box could not fail (four equal projects are 25% each, so nothing
+  would ever have merged). Writing the test to fail without the fix first is
+  worth the minute.
+- Playwright on a real multi-project branch - this is what found the two real
+  problems, neither of which a test would: the levels control was crushed to
+  9px by the profiling page's `.seg` class, and on a branch touching 33
+  projects 26 of them were two-line manifest bumps, each a full-size box, which
+  pushed the diff off the screen. **Improve:** app.css is one global sheet, so
+  class names collide silently; prefixing per page (`.prof-seg`) or a lint for
+  a class defined twice would catch it.
+- Stopping a background `diffweb --port N` with `pkill -f "diffweb --port N"`
+  also kills the shell running the command, since its own command line
+  matches. **Improve:** `poe diffweb` could write a pid file, or take a
+  `--stop`.
+
 ## 2026-11-17 - skeleton view (Claude)
 
 - `wt switch -c` - helped: a worktree of my own, so another session's
