@@ -69,7 +69,7 @@ const el = document.querySelector<HTMLElement>(".controls")!;
 const WT = el.dataset.wt!;
 const api = (p: string, q: Query) => `/api/w/${WT}/${p}?${new URLSearchParams(q)}`;
 
-const $base = byId<HTMLInputElement>("base");
+const $base = byId<HTMLSelectElement>("base");
 const $start = byId<HTMLSelectElement>("start");
 const $end = byId<HTMLSelectElement>("end");
 const $sbs = byId<HTMLInputElement>("sbs");
@@ -788,13 +788,35 @@ $scopes.addEventListener("click", (e) => {
   render();
 });
 
+// The base picker lists the branches this one is built on; "other ref…" asks
+// for anything else, and a ref that resolves joins the list.
+let lastBase = $base.value;
+// Undefined when cancelled; otherwise the option it added, if any.
+function chooseOtherBase(): { added: HTMLOptionElement | null } | undefined {
+  const ref = prompt("Base ref (branch, tag or commit):", lastBase)?.trim();
+  if (!ref) return undefined;
+  const listed = [...$base.options].find((o) => o.value === ref && !o.dataset.other);
+  const opt = listed ?? new Option(ref, ref);
+  if (!listed) $base.insertBefore(opt, $base.querySelector("option[data-other]"));
+  opt.selected = true;
+  return { added: listed ? null : opt };
+}
 $base.addEventListener("change", async () => {
+  let added: HTMLOptionElement | null = null;
+  if ($base.selectedOptions[0]?.dataset.other) {
+    const chosen = chooseOtherBase();
+    if (!chosen) { $base.value = lastBase; return; }
+    added = chosen.added;
+  }
   const r = await fetch(api("base", { base: $base.value }), { method: "POST" });
   if (!r.ok) {
     const { error } = (await r.json()) as { error?: string };
     status(error || `cannot resolve base ref "${$base.value}"`);
+    added?.remove();
+    $base.value = lastBase;
     return;
   }
+  lastBase = $base.value;
   if (await loadCommits()) render();
 });
 $start.addEventListener("change", () => { syncScopes(); render(); });

@@ -70,7 +70,7 @@ def world(tmp_path: Path) -> dict[str, Path]:
     (repo / "b.txt").write_text("beta\nuncommitted\n")  # dirty working tree
 
     linked = tmp_path / "proj.other"
-    git(repo, "worktree", "add", "-b", "other", str(linked))
+    git(repo, "worktree", "add", "-b", "other", str(linked), "master")
 
     return {"root": tmp_path, "repo": repo, "linked": linked, "origin": origin}
 
@@ -247,6 +247,55 @@ def test_default_base_without_origin(tmp_path: Path) -> None:
     git(tmp_path, "init", "-b", "master", str(solo))
     commit(solo, "f.txt", "x\n", "init")
     assert gitio.default_base(str(solo)) == "master"
+
+
+def stack_on_feature(world: dict[str, Path]) -> Path:
+    """A worktree on `stacked`, two commits on top of `feature`, which is
+    pushed. Also a branch already merged into master, which is no base."""
+    repo = world["repo"]
+    git(repo, "push", "-q", "origin", "feature")
+    git(repo, "branch", "landed", "master~1")
+    stacked = world["root"] / "proj.stacked"
+    git(repo, "worktree", "add", "-b", "stacked", str(stacked), "feature")
+    commit(stacked, "d.txt", "delta\n", "add d")
+    commit(stacked, "e.txt", "eps\n", "add e")
+    return stacked
+
+
+def test_base_candidates_list_every_branch_built_on_nearest_first(world: dict[str, Path]) -> None:
+    stacked = stack_on_feature(world)
+    git(stacked, "branch", "midway", "HEAD~1")
+    found = [(c.ref, c.ahead) for c in gitio.base_candidates(str(stacked))]
+    # origin/feature shares feature's tip, so only the local one is listed;
+    # `landed` is in master, `other` is not under this branch.
+    assert found == [("midway", 1), ("feature", 2), ("origin/master", 4)]
+    assert gitio.auto_base(str(stacked)) == "midway"
+
+
+def test_base_candidates_skip_the_branch_itself(world: dict[str, Path]) -> None:
+    stacked = stack_on_feature(world)
+    git(stacked, "push", "-q", "-u", "origin", "stacked")
+    git(stacked, "branch", "child")  # a branch made from here, not moved on yet
+    assert [c.ref for c in gitio.base_candidates(str(stacked))] == ["feature", "origin/master"]
+
+
+def test_base_candidates_drop_a_branch_further_off_than_main(world: dict[str, Path]) -> None:
+    """`old` is under feature, but master has since moved on three commits and
+    been merged in: five commits from `old` against three from master."""
+    repo, clone = world["repo"], world["root"] / "clone"
+    git(repo, "branch", "old", "feature~1")
+    git(world["root"], "clone", "-q", str(world["origin"]), str(clone))
+    for n in range(3):
+        commit(clone, f"m{n}.txt", "m\n", f"master {n}")
+    git(clone, "push", "-q", "origin", "master")
+    git(repo, "fetch", "-q")
+    git(repo, "merge", "-q", "--no-edit", "origin/master")
+    assert [(c.ref, c.ahead) for c in gitio.base_candidates(str(repo))] == [("origin/master", 3)]
+
+
+def test_unstacked_branch_bases_on_main(world: dict[str, Path]) -> None:
+    assert [(c.ref, c.ahead) for c in gitio.base_candidates(str(world["repo"]))] == [("origin/master", 2)]
+    assert gitio.auto_base(str(world["repo"])) == "origin/master"
 
 
 @pytest.mark.parametrize("bad", ["--upload-pack=touch /tmp/pwn", "-x", "a b", "a;b", "$(id)", "a\nb"])
@@ -439,6 +488,23 @@ def test_worktree_page_renders(client: TestClient, config: DiffwebConfig) -> Non
     r = client.get(f"/w/{wt_id(config, 'proj')}")
     assert r.status_code == 200
     assert "origin/master" in r.text
+
+
+def test_worktree_page_preselects_the_stacked_base(
+    world: dict[str, Path], client: TestClient, config: DiffwebConfig
+) -> None:
+    stack_on_feature(world)
+    r = client.get(f"/w/{wt_id(config, 'proj.stacked')}")
+    assert '<option value="feature" selected>feature &middot; 2</option>' in r.text
+    assert '<option value="origin/master">origin/master &middot; 4</option>' in r.text
+    assert "other ref" in r.text
+
+
+def test_worktree_page_keeps_an_unlisted_saved_base(client: TestClient, config: DiffwebConfig) -> None:
+    wid = wt_id(config, "proj")
+    assert client.post(f"/api/w/{wid}/base", params={"base": "master~1"}).status_code == 200
+    r = client.get(f"/w/{wid}")
+    assert '<option value="master~1" selected>master~1</option>' in r.text
 
 
 def test_unknown_worktree_404s(client: TestClient) -> None:

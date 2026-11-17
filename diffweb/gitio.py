@@ -169,6 +169,73 @@ def default_base(path: str) -> str:
     return "HEAD"
 
 
+@dataclass(frozen=True)
+class BaseCandidate:
+    ref: str
+    ahead: int  # commits on HEAD that are not on this ref
+
+
+def _ahead_of(path: str, ref: str, head: str) -> int | None:
+    out = _try_git(path, "rev-list", "--count", f"{ref}..{head}")
+    return int(out) if out else None
+
+
+def base_candidates(path: str) -> list[BaseCandidate]:
+    """Every branch HEAD is built on top of, nearest first, then the main
+    branch last. Nothing records what an unpushed stacked branch sits on, so
+    this reads it from history: a branch tip that HEAD contains is a branch it
+    was built on.
+
+    Tips the main branch already contains are left out (or every old merged
+    branch would be listed), as are tips at HEAD itself - its own branch and
+    remote copy, or a child not yet moved on, none of them a base. Where a local
+    and a remote branch share a tip, only the local one is kept, and a branch
+    no nearer than the main branch is no help, so it is dropped too.
+
+    History cannot tell a parent from a child made off this branch that this
+    branch has since moved past; both are listed and the nearer one comes
+    first. Reflogs do not settle it either: restacking by cherry-pick leaves a
+    branch older than the parent it now sits on."""
+    default = default_base(path)
+    head = _try_git(path, "rev-parse", "--verify", "--quiet", "HEAD")
+    if not head:
+        return []
+    head = head.strip()
+    found: list[tuple[int, bool, str, str]] = []
+    if default != "HEAD":
+        out = _try_git(
+            path, "for-each-ref", "--merged", head, "--no-merged", default,
+            "--format=%(objectname) %(refname)", "refs/heads", "refs/remotes",
+        )
+        for line in (out or "").splitlines():
+            sha, _, ref = line.partition(" ")
+            if sha == head or ref.endswith("/HEAD"):
+                continue
+            is_remote = ref.startswith("refs/remotes/")
+            short = ref.removeprefix("refs/remotes/" if is_remote else "refs/heads/")
+            ahead = _ahead_of(path, sha, head)
+            if ahead is not None:
+                found.append((ahead, is_remote, short, sha))
+    found.sort()
+    seen: set[str] = set()
+    result: list[BaseCandidate] = []
+    default_ahead = _ahead_of(path, default, head)
+    for ahead, _, short, sha in found:
+        if sha not in seen and (default_ahead is None or ahead < default_ahead):
+            seen.add(sha)
+            result.append(BaseCandidate(short, ahead))
+    if default_ahead is not None:
+        result.append(BaseCandidate(default, default_ahead))
+    return result
+
+
+def auto_base(path: str) -> str:
+    """The base to use when the user has not picked one: the nearest branch
+    this one is built on, which is the main branch unless it is stacked."""
+    candidates = base_candidates(path)
+    return candidates[0].ref if candidates else default_base(path)
+
+
 def merge_base(path: str, base: str, head: str = "HEAD") -> str:
     base_sha = resolve_ref(path, base)
     head_sha = resolve_ref(path, head)
@@ -623,4 +690,4 @@ def summarise(wt: Worktree, base: str) -> Summary:
 
 def summarise_all(worktrees: list[Worktree], base_for: dict[str, str]) -> list[Summary]:
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
-        return list(pool.map(lambda w: summarise(w, base_for.get(w.id) or default_base(w.path)), worktrees))
+        return list(pool.map(lambda w: summarise(w, base_for.get(w.id) or auto_base(w.path)), worktrees))

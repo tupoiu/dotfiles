@@ -111,9 +111,16 @@ so a worktree registered outside your configured roots still shows up. Worktrees
 whose basenames collide (several checkouts called `code`) fall back to their full
 home-relative path as a label.
 
-The base ref is auto-detected per repo - `origin/HEAD`, then `origin/master`,
-`origin/main`, `master`, `main` - and can be overridden in the UI, where it is
-remembered per worktree.
+The base ref is auto-detected per worktree. The main branch comes from
+`origin/HEAD`, then `origin/master`, `origin/main`, `master`, `main`. A branch
+stacked on another one bases on that branch instead: diffweb lists every branch
+the worktree's history is built on top of (local or remote tips that HEAD
+contains and the main branch does not), nearest first, and picks the nearest.
+Nothing in git records a stacked branch's parent, so this is read from history,
+and a branch made off this one that this one has since moved past looks the
+same as a parent. The *base* chip lists them all with the main branch last,
+each with how many commits the worktree has on top of it; *other ref…* takes any
+ref. A choice made there is remembered per worktree.
 
 ## Features
 
@@ -267,7 +274,7 @@ as one. The page draws plain text first and fetches a file's two sides from
 Enter) collapses the focused file, `v` marks it reviewed, `c` collapses or
 expands everything, `s` toggles side-by-side, `t` hides or shows test files, and
 `?` shows the list. Shortcuts
-stay out of the way while you are typing in the base-ref box or a commit select.
+stay out of the way while you are typing in a commit select.
 
 File headers stick below the toolbar as you scroll, so you always know which
 file you are looking at. The offset follows the toolbar's height, which changes

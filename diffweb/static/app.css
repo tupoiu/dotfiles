@@ -67,6 +67,23 @@ main { padding: 16px; }
   color: var(--accent); border-color: currentColor; font-weight: 550;
 }
 .scope-btn svg { display: block; }
+
+/* The base ref: a chip like the scope buttons, with its picker inside. */
+.controls label.base-chip {
+  gap: 6px; font-size: 12px; line-height: 1.6;
+  padding: 1px 5px 1px 9px; border-radius: 999px;
+  color: var(--accent); cursor: pointer; border: 1px solid currentColor;
+}
+.base-chip svg { display: block; }
+.base-chip select {
+  font: inherit; font-family: ui-monospace, monospace; font-size: 11px;
+  color: var(--fg); background: none; border: none; border-radius: 999px;
+  padding: 0 2px; cursor: pointer; max-width: 48ch;
+  appearance: none; -webkit-appearance: none;
+}
+.base-chip .chev { margin: 0 4px 0 -4px; pointer-events: none; }
+.base-chip select:focus-visible { outline: 1px solid var(--accent); }
+.base-chip option { background: var(--bg); color: var(--fg); }
 .branch {
   font-family: ui-monospace, monospace; font-size: 11px; color: var(--dim);
   border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; margin-left: 6px;

@@ -254,13 +254,16 @@ def worktree_page(
 ) -> Any:
     wt = find_worktree(wt_id, config)
     state = get_state()
-    base = base or state.base_ref(wt_id) or gitio.default_base(wt.path)
+    candidates = gitio.base_candidates(wt.path)
+    base = base or state.base_ref(wt_id) or (candidates[0].ref if candidates else gitio.default_base(wt.path))
     return templates.TemplateResponse(
         request,
         "worktree.html",
         {
             "wt": wt,
             "base": base,
+            "base_candidates": candidates,
+            "base_listed": any(c.ref == base for c in candidates),
             "start": start or "",
             "end": end or "",
             "features": config.features,
@@ -284,7 +287,7 @@ def worktree_page(
 @app.get("/api/w/{wt_id}/commits")
 def api_commits(wt_id: str, base: str | None = None, config: DiffwebConfig = Depends(get_config)) -> Any:
     wt = find_worktree(wt_id, config)
-    base = base or get_state().base_ref(wt_id) or gitio.default_base(wt.path)
+    base = base or get_state().base_ref(wt_id) or gitio.auto_base(wt.path)
     mb = gitio.merge_base(wt.path, base)
     return {"base": base, "merge_base": mb, "commits": gitio.commits(wt.path, mb, "HEAD")}
 
@@ -307,7 +310,7 @@ def api_diff(
     timer = profiling.Timer(enabled=config.features.profiling and not files)
 
     with timer.stage("refs"):
-        base = base or state.base_ref(wt_id) or gitio.default_base(wt.path)
+        base = base or state.base_ref(wt_id) or gitio.auto_base(wt.path)
         s, e = _range(wt, base, start, end)
         # Exactly one merge commit (first parent -> merge) has two readings: the
         # first-parent diff, which is mostly the other branch, and the remerge
