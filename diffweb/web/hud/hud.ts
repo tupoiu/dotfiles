@@ -52,6 +52,12 @@ interface Detail {
   needs_reply: boolean;
 }
 
+// Only for my open PRs that are not drafts, and loaded last.
+interface Check {
+  ci: string | null;
+  ready_to_merge: boolean;
+}
+
 interface Loaded<T> {
   data: T | null;
   checked_at: number | null;
@@ -73,6 +79,7 @@ const refreshButton = document.getElementById("hud-refresh")!;
 
 let overview: Loaded<Overview> | null = null;
 let details: Record<string, Detail> = {};
+let checks: Record<string, Check> = {};
 let muted = new Map<string, number>();
 let lastPoll = 0;
 
@@ -163,10 +170,15 @@ const DECISIONS: Record<string, [label: string, css: string]> = {
   CHANGES_REQUESTED: ["changes requested", "hud-changes"],
 };
 
-function fillReviews(cell: HTMLElement, d: Detail): void {
+function fillReviews(cell: HTMLElement, d: Detail, c: Check | undefined): void {
   cell.replaceChildren();
   const decision = d.decision ? DECISIONS[d.decision] : undefined;
   if (decision) cell.append(el("span", `hud-decision ${decision[1]}`, decision[0]));
+  if (c?.ready_to_merge) {
+    const ready = el("span", "hud-merge", "✓ ready to merge");
+    ready.title = "Out of draft, every needed review is in, CI is green, and no conflicts";
+    cell.append(ready);
+  }
   if (d.pending.length) {
     cell.append(el("span", "hud-waiting", "waiting on"));
     for (const r of d.pending) {
@@ -185,7 +197,7 @@ function applyDetails(): void {
     if (!d) continue;
     cell.classList.remove("dim");
     if (cell.dataset.lazy === "activity") fillActivity(cell, d, viewer, cell.closest("#section-mine") !== null);
-    else fillReviews(cell, d);
+    else fillReviews(cell, d, checks[cell.dataset.pr!]);
   }
 }
 
@@ -390,6 +402,14 @@ async function loadDetails(mode: string): Promise<void> {
   if (got.stale && mode === "cached") await loadDetails("fresh");
 }
 
+async function loadChecks(mode: string): Promise<void> {
+  const got = await getJson<Loaded<Record<string, Check>>>(`/api/hud/checks?mode=${mode}`);
+  if (!got?.data) return;
+  checks = got.data;
+  applyDetails();
+  if (got.stale && mode === "cached") await loadChecks("fresh");
+}
+
 async function load(mode: "cached" | "fresh" | "force"): Promise<void> {
   lastPoll = Date.now();
   const got = await getJson<Loaded<Overview> & { muted?: Mutes }>(`/api/hud?mode=${mode}`);
@@ -405,9 +425,11 @@ async function load(mode: "cached" | "fresh" | "force"): Promise<void> {
     return;
   }
   // A stale first paint is followed straight away by a fresh one; the details
-  // wait for it, so they are asked for the right set of PRs.
+  // wait for it, so they are asked for the right set of PRs. The checks are
+  // the slowest, so they come last.
   if (got.stale && mode === "cached") return load("fresh");
   await loadDetails(mode);
+  await loadChecks(mode);
 }
 
 refreshButton.addEventListener("click", async () => {

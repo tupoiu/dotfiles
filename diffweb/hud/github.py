@@ -1,11 +1,13 @@
 """GitHub queries for the HUD, through `gh api graphql`.
 
-Two queries, so the page can paint before the slow part is known:
+Three queries, so the page can paint before the slow parts are known:
 
 - `overview`: four aliased searches in one request - my open PRs, my PRs
   closed since a cutoff, the open PRs that request my review, and the PRs I
   reviewed since the cutoff.
 - `details`: per-PR review state and recent activity, by node id.
+- `checks`: CI state and "ready to merge", only for my open PRs that are not
+  drafts. CI rollups are the slowest thing GitHub computes, so this is last.
 
 Everything returned is plain JSON-able dicts, because it goes straight into the
 state DB cache and out to the page.
@@ -72,6 +74,22 @@ query($ids: [ID!]!) {
           ... on PullRequestReview { submittedAt state author { __typename login } }
         }
       }
+    }
+  }
+}
+"""
+
+CHECKS_QUERY = """
+query($ids: [ID!]!) {
+  nodes(ids: $ids) {
+    ... on PullRequest {
+      id
+      isDraft
+      mergeable
+      reviewDecision
+      reviewRequests { totalCount }
+      latestReviews(first: 50) { nodes { state } }
+      commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
     }
   }
 }
@@ -287,4 +305,46 @@ def details(ids: list[str], viewer: str | None, gh_path: str | None, timeout: fl
         for node in data.get("nodes") or []:
             if node and node.get("id"):
                 out[node["id"]] = _detail(node, viewer)
+    return out
+
+
+def _ci_state(node: dict[str, Any]) -> str | None:
+    """The head commit's rollup of all its checks and statuses. None: no CI ran."""
+    commits = [c for c in (node.get("commits") or {}).get("nodes") or [] if c]
+    commit = commits[-1].get("commit") or {} if commits else {}
+    return (commit.get("statusCheckRollup") or {}).get("state")
+
+
+def ready_to_merge(node: dict[str, Any]) -> bool:
+    """Out of draft, every needed review is in, CI is green, and no conflicts.
+
+    GitHub's review decision is APPROVED once the branch protection's required
+    reviews are in. A repo that requires no reviews has no decision, and then
+    one approval and no request for changes is enough. A PR with no CI at all
+    is not green: just after a push, the checks are not yet registered.
+    GitHub works out `mergeable` only when asked, so the first answer is often
+    UNKNOWN. That is not ready either; the next poll has the real answer.
+    """
+    if node.get("isDraft") or node.get("mergeable") != "MERGEABLE":
+        return False
+    if (node.get("reviewRequests") or {}).get("totalCount"):
+        return False
+    if _ci_state(node) != "SUCCESS":
+        return False
+    decision = node.get("reviewDecision")
+    if decision is not None:
+        return decision == "APPROVED"
+    states = {(r or {}).get("state") for r in (node.get("latestReviews") or {}).get("nodes") or []}
+    return "APPROVED" in states and "CHANGES_REQUESTED" not in states
+
+
+def checks(ids: list[str], gh_path: str | None, timeout: float) -> dict[str, Any]:
+    """CI state and readiness to merge per PR node id."""
+    out: dict[str, Any] = {}
+    for start in range(0, len(ids), _DETAILS_BATCH):
+        batch = ids[start : start + _DETAILS_BATCH]
+        data = run_graphql(CHECKS_QUERY, {"ids": batch}, gh_path, timeout)
+        for node in data.get("nodes") or []:
+            if node and node.get("id"):
+                out[node["id"]] = {"ci": _ci_state(node), "ready_to_merge": ready_to_merge(node)}
     return out

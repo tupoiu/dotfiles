@@ -179,3 +179,22 @@ def details(state: State, config: DiffwebConfig, mode: Mode = "cached", today: d
         mode,
         lambda: github.details(ids, viewer, config.tools.gh_path, config.hud.timeout_seconds),
     )
+
+
+def checks(state: State, config: DiffwebConfig, mode: Mode = "cached", today: date | None = None) -> dict[str, Any]:
+    """CI and "ready to merge" for my open, non-draft PRs in the stored overview.
+
+    Only those: merging is mine to do, and a draft is never ready.
+    """
+    scope, _ = _overview_scope(config, today or date.today())
+    found = _stored(state, "hud:overview", scope)
+    if found is None:
+        return {"data": None, "checked_at": None, "stale": True, "error": "no overview yet"}
+    ids = sorted(pr["id"] for pr in found[0]["sections"]["mine"]["prs"] if pr["status"] == "open")
+    return _load(
+        state,
+        "hud:checks",
+        _scope(ids),
+        mode,
+        lambda: github.checks(ids, config.tools.gh_path, config.hud.timeout_seconds),
+    )

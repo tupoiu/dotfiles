@@ -1,4 +1,4 @@
-"""HUD routes: the page shell, the two JSON endpoints it fills itself from, and mutes."""
+"""HUD routes: the page shell, the three JSON endpoints it fills itself from, and mutes."""
 
 from __future__ import annotations
 
@@ -41,6 +41,10 @@ def make_router(
     @router.get("/api/hud/details")
     def api_details(mode: service.Mode = "cached", config: DiffwebConfig = Depends(enabled)) -> Any:
         return service.details(get_state(), config, mode)
+
+    @router.get("/api/hud/checks")
+    def api_checks(mode: service.Mode = "cached", config: DiffwebConfig = Depends(enabled)) -> Any:
+        return service.checks(get_state(), config, mode)
 
     @router.post("/api/hud/mute")
     def api_mute(pr: str = Query(min_length=1), seconds: int = Query(ge=0, le=service.MAX_MUTE_SECONDS),

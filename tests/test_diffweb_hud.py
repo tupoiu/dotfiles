@@ -1,6 +1,6 @@
 """diffweb HUD tests.
 
-A fake `gh` answers the two GraphQL queries from canned JSON, so nothing here
+A fake `gh` answers the three GraphQL queries from canned JSON, so nothing here
 touches the network or the developer's GitHub account.
 """
 
@@ -108,22 +108,40 @@ DETAILS = {
 }
 
 
+def _check_node(n: int, *, draft: bool = False, mergeable: str = "MERGEABLE", decision: str | None = "APPROVED",
+                requested: int = 0, reviews: tuple[str, ...] = (), ci: str | None = "SUCCESS") -> dict:
+    return {
+        "id": f"PR_{n}",
+        "isDraft": draft,
+        "mergeable": mergeable,
+        "reviewDecision": decision,
+        "reviewRequests": {"totalCount": requested},
+        "latestReviews": {"nodes": [{"state": r} for r in reviews]},
+        "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": ci} if ci else None}}]},
+    }
+
+
+CHECKS = {"data": {"nodes": [_check_node(1, decision="CHANGES_REQUESTED", ci="FAILURE"), _check_node(3)]}}
+
+
 @pytest.fixture
 def fake_gh(tmp_path: Path) -> Path:
     """Answers `gh api graphql --input -` by looking at which query it got.
 
-    Each call is logged as one line, `overview` or `details`, so tests can count
+    Each call is logged as one line, `overview`, `details` or `checks`, so tests can count
     them. `gh-fail` next to it makes every call fail like an offline gh.
     """
     (tmp_path / "overview.json").write_text(json.dumps(OVERVIEW))
     (tmp_path / "details.json").write_text(json.dumps(DETAILS))
+    (tmp_path / "checks.json").write_text(json.dumps(CHECKS))
     script = tmp_path / "gh"
     script.write_text(
         f"#!{sys.executable}\n"
         "import json, os, sys\n"
         f"here = {str(tmp_path)!r}\n"
         "body = json.load(sys.stdin)\n"
-        "kind = 'details' if 'nodes(ids' in body['query'] else 'overview'\n"
+        "q = body['query']\n"
+        "kind = 'checks' if 'statusCheckRollup' in q else 'details' if 'nodes(ids' in q else 'overview'\n"
         "open(os.path.join(here, 'gh-calls'), 'a').write(kind + ' ' + json.dumps(body['variables']) + '\\n')\n"
         "if os.path.exists(os.path.join(here, 'gh-fail')):\n"
         "    print('error connecting to api.github.com', file=sys.stderr)\n"
@@ -290,6 +308,37 @@ def test_needs_reply(items: list[dict], expected: bool) -> None:
     assert github.needs_reply(items, ME) is expected
 
 
+@pytest.mark.parametrize(
+    ("node", "expected"),
+    [
+        (_check_node(1), True),
+        (_check_node(1, draft=True), False),
+        (_check_node(1, mergeable="CONFLICTING"), False),
+        (_check_node(1, mergeable="UNKNOWN"), False),  # GitHub has not worked it out yet
+        (_check_node(1, requested=1), False),  # someone is still asked to review
+        (_check_node(1, decision="REVIEW_REQUIRED"), False),
+        (_check_node(1, decision="CHANGES_REQUESTED"), False),
+        (_check_node(1, ci="PENDING"), False),
+        (_check_node(1, ci="FAILURE"), False),
+        (_check_node(1, ci=None), False),  # no CI has reported yet
+        # No required reviews: one approval and no request for changes is enough.
+        (_check_node(1, decision=None, reviews=("APPROVED", "COMMENTED")), True),
+        (_check_node(1, decision=None, reviews=("APPROVED", "CHANGES_REQUESTED")), False),
+        (_check_node(1, decision=None), False),
+    ],
+)
+def test_ready_to_merge(node: dict, expected: bool) -> None:
+    assert github.ready_to_merge(node) is expected
+
+
+def test_checks_parse_ci_and_readiness(fake_gh: Path) -> None:
+    found = github.checks(["PR_1", "PR_3"], str(fake_gh), 10)
+    assert found == {
+        "PR_1": {"ci": "FAILURE", "ready_to_merge": False},
+        "PR_3": {"ci": "SUCCESS", "ready_to_merge": True},
+    }
+
+
 def test_a_failing_gh_raises(fake_gh: Path, tmp_path: Path) -> None:
     (tmp_path / "gh-fail").touch()
     with pytest.raises(github.GitHubError, match="error connecting"):
@@ -381,6 +430,20 @@ def test_details_are_for_the_stored_overview(config: DiffwebConfig, tmp_path: Pa
     assert len(calls(tmp_path, "details")) == 1
 
 
+def test_checks_are_for_my_open_prs_in_the_stored_overview(config: DiffwebConfig, tmp_path: Path) -> None:
+    state = State(config.state_db_path())
+    assert service.checks(state, config)["data"] is None  # never fetches the overview itself
+    assert calls(tmp_path) == []
+    service.overview(state, config)
+    got = service.checks(state, config)
+    assert got["data"]["PR_3"]["ready_to_merge"] is True
+    # Not PR_2, a draft, and none of the PRs that are not mine.
+    sent = json.loads(calls(tmp_path, "checks")[0].split(" ", 1)[1])
+    assert sent["ids"] == ["PR_1", "PR_3"]
+    service.checks(state, config)
+    assert len(calls(tmp_path, "checks")) == 1
+
+
 def test_prs_link_to_a_local_worktree_on_their_branch(config: DiffwebConfig, repo: Path) -> None:
     got = service.overview(State(config.state_db_path()), config)
     by_number = {p["number"]: p for p in got["data"]["sections"]["mine"]["prs"]}
@@ -409,6 +472,7 @@ def test_hud_api(client: TestClient, tmp_path: Path) -> None:
     assert got["data"]["sections"]["review"]["total"] == 2
     details = client.get("/api/hud/details").json()
     assert details["data"]["PR_1"]["needs_reply"] is True
+    assert client.get("/api/hud/checks").json()["data"]["PR_3"]["ready_to_merge"] is True
     client.get("/api/hud?mode=force")
     assert len(calls(tmp_path, "overview")) == 2
     assert client.get("/api/hud?mode=bogus").status_code == 422

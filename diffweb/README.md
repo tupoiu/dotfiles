@@ -325,8 +325,16 @@ since" is that list as it is. On my own PRs, `↩ needs your reply` marks a PR
 where a person other than me spoke last and it was not an approval. Bots do not
 count either way.
 
+Last of all, a third query asks for CI on my open PRs that are not drafts, and
+`✓ ready to merge` marks the ones that can go in: every needed review is in
+(GitHub's review decision is *approved*, or, where the repo requires no
+reviews, one approval and no request for changes), nobody is still requested,
+the head commit's checks roll up to *success*, and GitHub says it merges
+cleanly. GitHub works out mergeability only when asked, so a PR can be one poll
+late to show it, but it is never shown on an *unknown*.
+
 The data comes from `gh api graphql`: one request with four aliased searches,
-then `nodes(ids:)` for the details. Both are stored in the state DB. The page
+then `nodes(ids:)` for the details and again for the checks. All three are stored in the state DB. The page
 paints from what is stored, asks again at once if that is over two minutes old,
 then polls every two minutes while the tab is visible. The refresh glyph asks
 GitHub straight away. A failed refresh keeps the old rows and says how old they
