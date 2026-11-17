@@ -24,7 +24,7 @@ from fastapi.responses import (
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import forge, gitio, profiling, rust_tests
+from . import forge, gitio, profiling, rust_tests, skeleton
 from .config import DiffwebConfig, load_config
 from .gitio import INDEX, UPSTREAM, WORKTREE, Worktree
 from .hud import routes as hud_routes
@@ -549,6 +549,46 @@ def api_blob(wt_id: str, rev: str, path: str, config: DiffwebConfig = Depends(ge
         "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
     }
     return Response(content=body, media_type=kind, headers=headers)
+
+
+@app.get("/api/w/{wt_id}/skeleton")
+def api_skeleton(
+    wt_id: str,
+    base: str | None = None,
+    start: str | None = None,
+    end: str | None = None,
+    tests: bool = True,
+    config: DiffwebConfig = Depends(get_config),
+) -> Any:
+    """The public names the range adds, per file, with signature and docstring
+    (see skeleton.py). Takes the same range as /diff; `tests=false` leaves the
+    test files out, as it does there."""
+    wt = find_worktree(wt_id, config)
+    base = base or get_state().base_ref(wt_id) or gitio.auto_base(wt.path)
+    s, e = _range(wt, base, start, end)
+    spec = gitio.test_pathspecs(config.tests.paths, exclude=True) if not tests else []
+    changes = {
+        path: c
+        for path, c in gitio.raw_changes(wt.path, s, e, spec).items()
+        if c["status"] != "D" and skeleton.supported(path)
+    }
+    paths = list(changes)
+    olds = {p: (c["old_path"] or p) for p, c in changes.items()}
+    after = gitio.blobs_text(wt.path, e, paths)
+    before = gitio.blobs_text(wt.path, s, sorted({o for p, o in olds.items() if changes[p]["status"] != "A"}))
+    found = [
+        skeleton.added_names(path, before.get(olds[path]), text)
+        for path in paths
+        if (text := after.get(path)) is not None
+    ]
+    found = [f for f in found if f.names or f.error]
+    names = [n for f in found for n in f.names]
+    return {
+        "start": s, "end": e, "base": base,
+        "files": [f.as_json() for f in found],
+        "names": len(names),
+        "documented": sum(1 for n in names if n.doc),
+    }
 
 
 @app.get("/api/w/{wt_id}/text", response_class=PlainTextResponse)

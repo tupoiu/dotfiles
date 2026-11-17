@@ -90,6 +90,8 @@
   <label class="chk" title="Leave out test files (tests.paths in the config) to read only the code">
     <input type="checkbox" id="hide-tests"> hide tests</label>
   {% endif %}
+  <label class="chk" title="Swap the diff for its skeleton: every public name the range adds, with its signature and docstring (n)">
+    <input type="checkbox" id="skeleton"> skeleton</label>
   <label class="chk" id="true-diff-wrap" hidden
          title="A merge commit shows only its conflict resolution (git show --remerge-diff) by default. Tick to see the whole diff against the first parent instead.">
     <input type="checkbox" id="true-diff"> true diff</label>
@@ -106,6 +108,7 @@
 {% block content %}
 <div id="summary" class="summary"></div>
 <div id="diff"></div>
+<div id="skeleton-view" hidden></div>
 {% endblock %}
 {% block scripts %}
 <script src="{{ asset('vendor/highlight.min.js') }}"></script>

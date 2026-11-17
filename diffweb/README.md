@@ -349,6 +349,27 @@ then polls every two minutes while the tab is visible. The refresh glyph asks
 GitHub straight away. A failed refresh keeps the old rows and says how old they
 are. The code is in `hud/`, apart from the diff viewer.
 
+### From Claude: skeleton view
+
+The *skeleton* tickbox (key `n`) swaps the diff for its table of contents:
+every public name the range adds, grouped by file, with its signature and the
+first paragraph of its docstring. A name with no docstring shows *No
+docstring.* in amber with an amber rule, and each file says how many of its
+names are documented, so the view doubles as a docs check; *only undocumented*
+leaves just the gaps. Clicking a name shows the diff at its definition. The
+skeleton is for the same range as the diff, and *hide tests* takes the test
+files out of both. It rides in the URL as `skeleton=1`.
+
+Public means a Python `def` or `class` with no leading `_`, at module level or
+in a public class (a function nested in a function is a local), a TypeScript
+`export function` or exported class, and a Rust `pub fn`, `pub struct`, `pub
+enum` or `pub trait`. Python is read with `ast`; the docs of the other two are
+the `//`, `/** */` or `///` comments right above, read with line rules. A name
+is added when the start of the range does not define it in that file, so a
+docstring changed on an existing name is not shown. The rules are in
+`skeleton.py` and the endpoint is `/api/w/{id}/skeleton`, which takes the same
+`base`, `start`, `end` and `tests` as `/diff`.
+
 ## Alternatives that were tried first
 
 - **Forgejo** (`codeberg.org/forgejo/forgejo:9` under docker) - genuinely nice
@@ -372,6 +393,7 @@ are. The code is in `hud/`, apart from the diff viewer.
 | `config.py` | pydantic models + YAML loading; every path the app touches comes from here |
 | `gitio.py` | argv-only git wrappers, worktree discovery, ref validation |
 | `structural.py` | difftastic JSON + the two blobs -> unified diff hunks, spliced into git's patch |
+| `skeleton.py` | the public names a range adds, with signatures and docstrings, for the skeleton view |
 | `state.py` | SQLite reviewed-state and per-worktree base-ref overrides |
 | `app.py` | FastAPI routes |
 | `hud/` | the PR dashboard: `github.py` (GraphQL queries + parsing), `service.py` (state DB cache, worktree matching), `routes.py`, `templates/hud.html` |
@@ -382,6 +404,7 @@ are. The code is in `hud/`, apart from the diff viewer.
 | `web/diff/render.ts` | draws parsed files as HTML strings; the gaps and expanders |
 | `web/diff/highlight.ts` | highlight.js over whole files, cut into lines |
 | `web/keys.ts` | keyboard navigation, imported by `worktree.ts` |
+| `web/skeleton.ts` | draws the skeleton view from `/api/w/{id}/skeleton` |
 | `static/`, `templates/` | the UI; `static/vendor/` and `static/dist/` are gitignored, populated by `poe fetch-diffweb-assets` and `poe diffweb-build` |
 | `package.json`, `tsconfig.json` | the bun build, plus dev-only tooling: `tsc`, playwright |
 | `shot.ts` | screenshots the running app (see below) |

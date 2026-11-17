@@ -554,6 +554,48 @@ def blob_bytes(path: str, rev: str, file: str) -> bytes | None:
         return None
 
 
+def blobs_text(path: str, rev: str, files: Sequence[str]) -> dict[str, str | None]:
+    """Many files' text at one `rev` - None for a file missing there or binary.
+
+    One `git cat-file --batch` for the lot, rather than a process per file: a
+    range of a thousand files would otherwise cost seconds in process starts.
+    """
+    out: dict[str, str | None] = {}
+
+    def decode(body: bytes | None) -> str | None:
+        return None if body is None or b"\0" in body[:8000] else body.decode("utf-8", errors="replace")
+
+    if rev == WORKTREE:
+        for f in files:
+            out[f] = decode(blob_bytes(path, rev, f))
+        return out
+    for f in files:
+        if f.startswith("-") or "\0" in f or "\n" in f:
+            raise ValueError(f"refusing suspicious path: {f!r}")
+    prefix = ":" if rev == INDEX else f"{resolve_ref(path, rev)}:"
+    proc = subprocess.run(
+        ["git", "cat-file", "--batch"],
+        cwd=path,
+        input="".join(f"{prefix}{f}\n" for f in files).encode(),
+        capture_output=True,
+    )
+    data, pos = proc.stdout, 0
+    for f in files:
+        nl = data.find(b"\n", pos)
+        if nl < 0:
+            out[f] = None
+            continue
+        header = data[pos:nl].split()
+        pos = nl + 1
+        out[f] = None  # "<name> missing", or not a blob
+        if len(header) == 3 and header[2].isdigit():
+            size = int(header[2])
+            if header[1] == b"blob":
+                out[f] = decode(data[pos : pos + size])
+            pos += size + 1  # every body is followed by a newline
+    return out
+
+
 # --- merge commits ---------------------------------------------------------
 #
 # A merge commit's diff against its first parent is mostly the other branch's

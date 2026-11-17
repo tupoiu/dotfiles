@@ -12,6 +12,7 @@ const KEYS: [key: string, does: string][] = [
   ["c", "collapse or expand all"],
   ["s", "toggle side-by-side"],
   ["t", "hide or show test files"],
+  ["n", "skeleton: the public names the range adds"],
   ["g / G", "first / last file"],
   ["?", "this help"],
 ];
@@ -122,6 +123,7 @@ document.addEventListener("keydown", (e) => {
     case "c": document.getElementById("toggle-all")?.click(); break;
     case "s": toggleCheckbox("sbs"); break;
     case "t": if (!toggleCheckbox("hide-tests")) return; break;
+    case "n": toggleCheckbox("skeleton"); break;
     case "?": helpOverlay(); break;
     default: return;
   }

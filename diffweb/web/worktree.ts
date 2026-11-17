@@ -2,6 +2,7 @@ import { refresh as refreshKeys } from "./keys.ts";
 import { filePath, parseDiff, type DiffFile } from "./diff/parse.ts";
 import { addInterval, esc, renderBody, renderFile, type FileView, type Interval } from "./diff/render.ts";
 import { fileLines, highlightFile, highlightLine, languageFor, type HlLine } from "./diff/highlight.ts";
+import { skeletonHtml, type SkeletonResponse } from "./skeleton.ts";
 
 // --- what the server sends ------------------------------------------------
 
@@ -75,6 +76,8 @@ const $end = byId<HTMLSelectElement>("end");
 const $sbs = byId<HTMLInputElement>("sbs");
 const $hideReviewed = byId<HTMLInputElement>("hide-reviewed");
 const $hideTests = byId<HTMLInputElement | null>("hide-tests");
+const $skeletonBox = byId<HTMLInputElement>("skeleton");
+const $skeleton = byId<HTMLElement>("skeleton-view");
 const $structural = byId<HTMLInputElement | null>("structural");
 const $trueDiff = byId<HTMLInputElement>("true-diff");
 const $status = byId<HTMLElement>("status");
@@ -238,6 +241,7 @@ function syncUrl(): void {
   if ($end.value) q.set("end", $end.value);
   if ($trueDiff.checked) q.set("remerge", "0");
   if ($hideTests?.checked) q.set("tests", "0");
+  if ($skeletonBox.checked) q.set("skeleton", "1");
   history.replaceState(null, "", `${location.pathname}?${q}`);
 }
 
@@ -277,24 +281,33 @@ async function loadCommits(): Promise<boolean> {
 // Anything that throws mid-render (a missing vendored library, a diff the
 // parser cannot read) would otherwise leave "loading diff…" up forever.
 async function render(): Promise<void> {
+  // The diff is drawn even under the skeleton, so a jump from a name to its
+  // definition is instant. A skeleton out of sight is only marked stale.
+  skeletonFor = "";
   try {
-    await renderDiff();
+    await Promise.all([renderDiff(), $skeletonBox.checked ? renderSkeleton() : null]);
   } catch (err) {
     console.error(err);
     status("loading diff failed");
   }
 }
 
+// The range both views are drawn for, as the server reads it.
+function rangeQuery(): Query {
+  const q: Query = { base: $base.value };
+  if ($start.value) q.start = $start.value;
+  if ($end.value) q.end = $end.value;
+  if ($hideTests?.checked) q.tests = "false";
+  return q;
+}
+
 async function renderDiff(): Promise<void> {
   const gen = ++renderGen;
   syncUrl();
   status("loading diff…", true);
-  const q: Query = { base: $base.value };
-  if ($start.value) q.start = $start.value;
-  if ($end.value) q.end = $end.value;
+  const q = rangeQuery();
   if ($structural?.checked) q.renderer = "structural";
   if ($trueDiff.checked) q.remerge = "false";
-  if ($hideTests?.checked) q.tests = "false";
 
   const fetchStart = performance.now();
   const r = await fetch(api("diff", q));
@@ -821,6 +834,84 @@ $base.addEventListener("change", async () => {
 });
 $start.addEventListener("change", () => { syncScopes(); render(); });
 $end.addEventListener("change", () => { syncScopes(); render(); });
+
+// --- skeleton ---------------------------------------------------------------
+
+// The skeleton swaps places with the diff: the public names the range adds,
+// each a link to its definition. It rides in the URL like "hide tests" does.
+let skeletonFor = "";  // the range the drawn skeleton is for; "" when stale
+let skeletonGen = 0;
+$skeletonBox.checked = params.get("skeleton") === "1";
+
+function showSkeleton(on: boolean): void {
+  $skeletonBox.checked = on;
+  $diff.hidden = on;
+  $skeleton.hidden = !on;
+}
+
+function toggleSkeleton(on: boolean): void {
+  showSkeleton(on);
+  syncUrl();
+  if (on && skeletonFor !== JSON.stringify(rangeQuery())) void renderSkeleton();
+}
+
+async function renderSkeleton(): Promise<void> {
+  const gen = ++skeletonGen;
+  const q = rangeQuery();
+  const want = JSON.stringify(q);
+  if (!$skeleton.childElementCount) $skeleton.textContent = "reading the range’s public names…";
+  const r = await fetch(api("skeleton", q));
+  const data = (await r.json()) as SkeletonResponse;
+  if (gen !== skeletonGen) return;
+  if (!r.ok || data.error) {
+    $skeleton.innerHTML = `<span class="warn">${esc(data.error ?? `loading skeleton failed (${r.status})`)}</span>`;
+    return;
+  }
+  const onlyUndoc = $skeleton.classList.contains("only-undoc");
+  $skeleton.innerHTML = skeletonHtml(data);
+  byId<HTMLInputElement>("skel-undoc").checked = onlyUndoc;
+  skeletonFor = want;
+}
+
+$skeletonBox.addEventListener("change", () => toggleSkeleton($skeletonBox.checked));
+$skeleton.addEventListener("change", (e) => {
+  const box = e.target as HTMLInputElement;
+  if (box.id === "skel-undoc") $skeleton.classList.toggle("only-undoc", box.checked);
+});
+$skeleton.addEventListener("click", (e) => {
+  const link = (e.target as Element).closest<HTMLElement>("a.sg");
+  if (!link) return;
+  e.preventDefault();
+  toggleSkeleton(false);
+  void jumpTo(link.dataset.path!, Number(link.dataset.line));
+});
+
+// Show `line` (end side) of `path` in the diff. A large range loads file by
+// file, so the file may not be drawn yet: wait a little for it.
+async function jumpTo(path: string, line: number): Promise<void> {
+  const id = anchorFor(infoByPath[path]?.path ?? path);
+  let wrapper: HTMLElement | null = null;
+  for (let tries = 0; tries < 100 && !(wrapper = document.getElementById(id)); tries++) {
+    await new Promise((done) => setTimeout(done, 100));
+  }
+  if (!wrapper) { status(`${path} is not in the diff`); return; }
+  if (wrapper.classList.contains("collapsed")) setCollapsed(wrapper, wrapper.dataset.path!, false);
+  if (wrapper.offsetParent === null) { status(`${path} is hidden by “hide reviewed”`); return; }
+  // The end side's number is the last number cell of a row, in either layout.
+  const row = [...wrapper.querySelectorAll<HTMLTableRowElement>("tr")].find((tr) => {
+    const nums = tr.querySelectorAll("td.dw-num");
+    return nums[nums.length - 1]?.textContent === String(line);
+  });
+  const target = row ?? wrapper;
+  target.scrollIntoView({ block: "center" });
+  if (row) {
+    row.classList.add("dw-target");
+    setTimeout(() => row.classList.remove("dw-target"), 2000);
+  }
+}
+
+// Only which view is shown: the first render() draws it, once the range is known.
+showSkeleton($skeletonBox.checked);
 
 if (el.dataset.live === "1") {
   const es = new EventSource(`/events/${WT}`);
