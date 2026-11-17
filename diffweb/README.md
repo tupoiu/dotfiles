@@ -91,6 +91,7 @@ emphasis:                  # files drawn with a coloured rail; the first matchin
   - {label: proto, paths: ["*.proto"], color: purple, header: filled}
   - {label: dependencies, paths: [pyproject.toml, Cargo.toml], color: orange}
   - {label: spec, paths: ["*SPEC*", "**/specs/**/*.md"], color: teal, header: filled}
+  - {label: intent, paths: ["*INTENT*"], color: pink, header: filled}
 tools:
   difft_path: null         # defaults to whatever `difft` is on PATH
   gh_path: null            # defaults to whatever `gh` is on PATH
@@ -172,7 +173,7 @@ chip with its label in the header, and a dot in the file list. Emphasised
 files come first in the diff and the file list, each group in git's order.
 `header:
 tinted` (the default) washes the header with the colour; `header: filled`
-fills it, for the files that matter most. By default protos and specs are
+fills it, for the files that matter most. By default protos, specs and INTENT docs are
 filled, and `pyproject.toml` and `Cargo.toml` are tinted. The colours are
 orange, purple, teal and pink, each with a light and a dark shade; red, green
 and blue already mean removed, added and focused. `paths` are git-style

@@ -41,6 +41,10 @@ GIT_ENV = {
         ("myspecs/a.md", None),             # a folder that only ends in "specs"
         ("docs/SPECS/a.py", None),          # SPEC in a folder, not the name
         ("web/a.spec.ts", None),            # case-sensitive: a test, not a spec
+        ("diffweb/INTENT-hud.md", "intent"),
+        ("INTENT.md", "intent"),
+        ("docs/INTENT/a.md", None),         # INTENT in a folder, not the name
+        ("src/intent.py", None),            # case-sensitive
         ("src/main.rs", None),
     ],
 )

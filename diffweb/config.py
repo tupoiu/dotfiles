@@ -110,6 +110,7 @@ def _default_emphasis() -> list[EmphasisRule]:
         EmphasisRule(label="dependencies", paths=["pyproject.toml", "Cargo.toml"], color="orange"),
         # Case-sensitive, so test files like `x.spec.ts` are not specs.
         EmphasisRule(label="spec", paths=["*SPEC*", "**/specs/**/*.md"], color="teal", header="filled"),
+        EmphasisRule(label="intent", paths=["*INTENT*"], color="pink", header="filled"),
     ]
 
 
