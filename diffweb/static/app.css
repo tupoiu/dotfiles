@@ -338,6 +338,13 @@ body.hide-reviewed .dw-file.is-reviewed { display: none; }
 .seg-serialise { background: #d29922; }
 .seg-network { background: var(--dim); }
 .seg-render { background: var(--del); }
+.seg-discover { background: #8957e5; }
+.seg-summarise { background: var(--accent); }
+.seg-prs { background: #1f9c9c; }
+.seg-reviewed { background: #d29922; }
+.seg-template { background: var(--del); }
+.profiles-heading { font-size: 1em; margin: 1.5em 0 0.5em; }
+.profiles-heading .status { font-weight: normal; margin-left: 0.5em; }
 .legend { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
 .legend .key { display: inline-flex; align-items: center; gap: 5px; }
 .legend .seg { width: 12px; border-radius: 2px; }

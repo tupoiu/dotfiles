@@ -178,6 +178,13 @@ class DiffwebConfig(BaseModel):
     def profile_log_path(self) -> Path:
         return Path(os.path.expanduser(self.profile_log))
 
+    def catalog_profile_log_path(self) -> Path:
+        """Catalog loads, beside the diff profiles but not among them: a
+        diffweb from before they existed reads the diff log and would choke on
+        them, and a catalog visit should not push a diff profile out."""
+        path = self.profile_log_path()
+        return path.with_name(f"{path.stem}-catalog{path.suffix}")
+
 
 def config_path(path: str | os.PathLike[str] | None = None) -> Path:
     if path is not None:

@@ -87,6 +87,7 @@ def reset_for_tests() -> None:
     _config = _state = None
     _diff_cache.clear()
     _pending_profiles.clear()
+    gitio.clear_caches()
 
 
 app.include_router(hud_routes.make_router(get_config, get_state, templates))
@@ -230,17 +231,41 @@ def _attach_pull_requests(summaries: list[gitio.Summary], config: DiffwebConfig)
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request, config: DiffwebConfig = Depends(get_config)) -> Any:
     state = get_state()
-    worktrees = gitio.discover(config)
-    summaries = gitio.summarise_all(worktrees, state.all_base_refs())
-    if config.features.pr_links:
-        _attach_pull_requests(summaries, config)
-    for summary in summaries:
-        # Cheap approximation: how many files we have ever ticked off here.
-        # The exact per-range figure is computed on the diff page itself.
-        summary.reviewed = len(state.reviewed(summary.worktree.id))
-    return templates.TemplateResponse(
-        request, "index.html", {"summaries": summaries, "features": config.features}
-    )
+    timer = profiling.Timer(enabled=config.features.profiling)
+    with timer.stage("discover"):
+        worktrees = gitio.discover(config)
+    with timer.stage("summarise"):
+        summaries = gitio.summarise_all(worktrees, state.all_base_refs())
+    with timer.stage("prs"):
+        if config.features.pr_links:
+            _attach_pull_requests(summaries, config)
+    with timer.stage("reviewed"):
+        for summary in summaries:
+            # Cheap approximation: how many files we have ever ticked off here.
+            # The exact per-range figure is computed on the diff page itself.
+            summary.reviewed = len(state.reviewed(summary.worktree.id))
+    with timer.stage("template"):
+        response = templates.TemplateResponse(
+            request, "index.html", {"summaries": summaries, "features": config.features}
+        )
+    if timer.enabled:
+        # Server-rendered, so the server's time is nearly all of the wait and
+        # the record is complete without hearing back from the page.
+        slowest = sorted(summaries, key=lambda s: s.elapsed_ms, reverse=True)[:3]
+        profiling.append(
+            config.catalog_profile_log_path(),
+            {
+                "kind": "catalog",
+                "at": time.time(),
+                "worktrees": len(summaries),
+                "stages": {k: round(v, 2) for k, v in timer.stages.items()},
+                "server_ms": round(timer.total_ms, 2),
+                "total_ms": round(timer.total_ms, 2),
+                "slowest": [{"worktree": s.worktree.name, "ms": round(s.elapsed_ms, 2)} for s in slowest],
+            },
+            config.profile_keep,
+        )
+    return response
 
 
 @app.get("/w/{wt_id}", response_class=HTMLResponse)
@@ -481,13 +506,16 @@ async def api_profile(request: Request, config: DiffwebConfig = Depends(get_conf
 def profiles_page(request: Request, config: DiffwebConfig = Depends(get_config)) -> Any:
     if not config.features.profiling:
         raise HTTPException(404, "profiling is disabled in config")
-    records = profiling.read(config.profile_log_path())
+    diffs = profiling.read(config.profile_log_path())
+    catalogs = profiling.read(config.catalog_profile_log_path())
     return templates.TemplateResponse(
         request,
         "profiles.html",
         {
-            "records": [r | {"segments": profiling.segments(r)} for r in records],
-            "aggregates": profiling.aggregates(records),
+            "records": [r | {"segments": profiling.segments(r)} for r in diffs],
+            "aggregates": profiling.aggregates(diffs),
+            "catalogs": [r | {"segments": profiling.segments(r)} for r in catalogs],
+            "catalog_aggregates": profiling.aggregates(catalogs),
             "log_path": str(config.profile_log_path()),
         },
     )

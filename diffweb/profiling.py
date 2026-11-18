@@ -20,6 +20,10 @@ from typing import Iterator
 # Stages in the order they happen, which is also the order the bar is drawn in.
 SERVER_STAGES = ("refs", "numstat", "shas", "diff", "serialise")
 
+# The catalog page's stages. It is rendered on the server, so these are all of
+# its profile; there is no client half to wait for.
+CATALOG_STAGES = ("discover", "summarise", "prs", "reviewed", "template")
+
 
 class Timer:
     """Accumulates named stage durations in milliseconds.
@@ -128,11 +132,14 @@ def segments(record: dict) -> list[dict]:
     if total <= 0:
         return []
     stages = record.get("stages") or {}
-    parts = [(name, float(stages.get(name) or 0)) for name in SERVER_STAGES]
-    server = sum(ms for _, ms in parts)
-    fetch = float(record.get("fetch_ms") or 0)
-    parts.append(("network", max(0.0, fetch - server)))
-    parts.append(("render", float(record.get("render_ms") or 0)))
+    if record.get("kind") == "catalog":
+        parts = [(name, float(stages.get(name) or 0)) for name in CATALOG_STAGES]
+    else:
+        parts = [(name, float(stages.get(name) or 0)) for name in SERVER_STAGES]
+        server = sum(ms for _, ms in parts)
+        fetch = float(record.get("fetch_ms") or 0)
+        parts.append(("network", max(0.0, fetch - server)))
+        parts.append(("render", float(record.get("render_ms") or 0)))
     return [
         {"name": name, "ms": ms, "pct": 100 * ms / total} for name, ms in parts if ms > 0
     ]

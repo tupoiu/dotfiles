@@ -293,6 +293,92 @@ def test_base_candidates_drop_a_branch_further_off_than_main(world: dict[str, Pa
     assert [(c.ref, c.ahead) for c in gitio.base_candidates(str(repo))] == [("origin/master", 3)]
 
 
+def test_base_candidates_are_remembered_while_nothing_moves(
+    world: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stacked = str(stack_on_feature(world))
+    calls = []
+    real = gitio._base_candidates
+    monkeypatch.setattr(gitio, "_base_candidates", lambda p: calls.append(p) or real(p))
+    first = gitio.base_candidates(stacked)
+    assert gitio.base_candidates(stacked) == first
+    assert len(calls) == 1
+
+
+def test_base_candidates_see_a_new_branch(world: dict[str, Path]) -> None:
+    stacked = stack_on_feature(world)
+    assert [c.ref for c in gitio.base_candidates(str(stacked))] == ["feature", "origin/master"]
+    git(stacked, "branch", "midway", "HEAD~1")
+    assert [c.ref for c in gitio.base_candidates(str(stacked))] == ["midway", "feature", "origin/master"]
+
+
+def test_base_candidates_see_a_branch_deleted(world: dict[str, Path]) -> None:
+    stacked = stack_on_feature(world)
+    git(stacked, "branch", "midway", "HEAD~1")
+    assert gitio.auto_base(str(stacked)) == "midway"
+    git(stacked, "branch", "-D", "midway")
+    assert gitio.auto_base(str(stacked)) == "feature"
+
+
+def test_base_candidates_see_head_move(world: dict[str, Path]) -> None:
+    stacked = stack_on_feature(world)
+    assert [(c.ref, c.ahead) for c in gitio.base_candidates(str(stacked))][0] == ("feature", 2)
+    commit(stacked, "f.txt", "phi\n", "add f")
+    assert [(c.ref, c.ahead) for c in gitio.base_candidates(str(stacked))][0] == ("feature", 3)
+
+
+def test_base_candidates_see_a_fetch_move_main(world: dict[str, Path]) -> None:
+    """Only a remote-tracking ref moves: no local branch, no HEAD."""
+    repo, clone = world["repo"], world["root"] / "clone"
+    assert gitio.base_candidates(str(repo))[-1] == gitio.BaseCandidate("origin/master", 2)
+    git(world["root"], "clone", "-q", str(world["origin"]), str(clone))
+    commit(clone, "m.txt", "m\n", "master moves")
+    git(clone, "push", "-q", "origin", "master")
+    git(repo, "fetch", "-q")
+    git(repo, "merge", "-q", "--no-edit", "origin/master")
+    assert gitio.base_candidates(str(repo))[-1] == gitio.BaseCandidate("origin/master", 3)
+
+
+def test_base_candidates_see_origin_head_retarget(world: dict[str, Path]) -> None:
+    repo = world["repo"]
+    git(repo, "push", "-q", "origin", "feature~1:refs/heads/trunk")
+    git(repo, "fetch", "-q")
+    assert gitio.base_candidates(str(repo))[-1].ref == "origin/master"
+    git(repo, "remote", "set-head", "origin", "trunk")
+    assert gitio.base_candidates(str(repo))[-1].ref == "origin/trunk"
+
+
+def test_base_candidates_see_a_checkout(world: dict[str, Path]) -> None:
+    """Switching branch moves HEAD and no ref at all, so HEAD must be in the key."""
+    stacked = stack_on_feature(world)
+    assert gitio.auto_base(str(stacked)) == "feature"
+    git(stacked, "checkout", "-q", "--detach", "origin/master")
+    git(stacked, "checkout", "-q", "-b", "fresh")
+    commit(stacked, "g.txt", "g\n", "on master")
+    git(stacked, "checkout", "-q", "stacked")
+    assert gitio.auto_base(str(stacked)) == "feature"
+    git(stacked, "checkout", "-q", "fresh")
+    assert gitio.auto_base(str(stacked)) == "origin/master"
+
+
+def test_base_candidates_are_not_kept_when_refs_move_mid_lookup(
+    world: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stacked = stack_on_feature(world)
+    real = gitio._base_candidates
+
+    def racing(path: str) -> list[gitio.BaseCandidate]:
+        out = real(path)
+        git(stacked, "branch", "midway", "HEAD~1")  # a fetch lands while we work
+        return out
+
+    monkeypatch.setattr(gitio, "_base_candidates", racing)
+    gitio.base_candidates(str(stacked))
+    # Filed under the pre-fetch key, it would be served again were `midway`
+    # deleted - with `midway` missing from it, or worse, the other way round.
+    assert str(stacked) not in gitio._candidates_cache
+
+
 def test_unstacked_branch_bases_on_main(world: dict[str, Path]) -> None:
     assert [(c.ref, c.ahead) for c in gitio.base_candidates(str(world["repo"]))] == [("origin/master", 2)]
     assert gitio.auto_base(str(world["repo"])) == "origin/master"
@@ -1002,6 +1088,13 @@ def test_dirty_count(world: dict[str, Path]) -> None:
     assert gitio.dirty_count(str(world["linked"])) == 0
 
 
+def test_summary_dirty_count_includes_untracked_files(world: dict[str, Path]) -> None:
+    """The summary counts untracked files from the list numstat already made."""
+    (world["repo"] / "new.txt").write_text("fresh\n")
+    wt = next(w for w in gitio.discover(DiffwebConfig(roots=[str(world["repo"])])) if w.name == "proj")
+    assert gitio.summarise(wt, "origin/master").dirty == gitio.dirty_count(str(world["repo"])) == 2
+
+
 def test_summary_carries_branch_context(world: dict[str, Path]) -> None:
     wt = next(w for w in gitio.discover(DiffwebConfig(roots=[str(world["repo"])])) if w.name == "proj")
     s = gitio.summarise(wt, "origin/master")
@@ -1583,6 +1676,29 @@ def test_profiles_page_lists_recent_profiles_newest_first(
     assert html.index("25</strong>") < html.index("15</strong>")
     assert "2 recent" in html
     assert "stagebar" in html
+
+
+def test_catalog_load_is_profiled(client: TestClient, config: DiffwebConfig) -> None:
+    client.get("/")
+    (record,) = profiling.read(config.catalog_profile_log_path())
+    assert not config.profile_log_path().exists(), "older diffwebs read that log as diff profiles only"
+    assert record["kind"] == "catalog"
+    assert record["worktrees"] == 2
+    assert set(record["stages"]) == set(profiling.CATALOG_STAGES)
+    assert {s["worktree"] for s in record["slowest"]} == {"proj", "proj.other"}
+    assert [seg["name"] for seg in profiling.segments(record)] == [
+        n for n in profiling.CATALOG_STAGES if record["stages"][n] > 0
+    ]
+
+
+def test_profiles_page_keeps_catalog_and_diff_loads_apart(client: TestClient, config: DiffwebConfig) -> None:
+    client.get("/")
+    profile_id = client.get(f"/api/w/{wt_id(config, 'proj')}/diff").json()["profile_id"]
+    client.post("/api/profile", json={"profile_id": profile_id, "fetch_ms": 5, "render_ms": 10})
+    html = client.get("/profiles").text
+    assert html.count("1 recent") == 2
+    assert "seg-summarise" in html and "seg-numstat" in html
+    assert "No catalog profiles yet" not in html and "No profiles yet" not in html
 
 
 def test_profiles_page_is_empty_without_profiles(client: TestClient, config: DiffwebConfig) -> None:

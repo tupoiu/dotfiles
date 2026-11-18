@@ -12,6 +12,8 @@ import os
 import re
 import shutil
 import subprocess
+import threading
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -180,7 +182,49 @@ def _ahead_of(path: str, ref: str, head: str) -> int | None:
     return int(out) if out else None
 
 
+# path -> (fingerprint, candidates). Working the candidates out asks git which
+# of every branch tip HEAD contains, which in a repo with thousands of remote
+# branches is ~200ms a worktree, and the catalog does it for every worktree on
+# every load. The answer is a function of HEAD, the ref tips (which branches
+# exist, where they point, what origin/HEAD names, what a short name like
+# `master` resolves to) and the immutable commits behind them, so a fingerprint
+# of HEAD plus every ref - ~15ms to list - is a complete key.
+_candidates_cache: dict[str, tuple[str, list[BaseCandidate]]] = {}
+_candidates_lock = threading.Lock()
+
+
+def clear_caches() -> None:
+    with _candidates_lock:
+        _candidates_cache.clear()
+
+
+def _refs_fingerprint(path: str) -> str | None:
+    """HEAD and every ref, or None when git cannot say (no commits yet, not a repo)."""
+    head = _try_git(path, "rev-parse", "--verify", "--quiet", "HEAD")
+    refs = _try_git(path, "for-each-ref", "--format=%(objectname) %(refname) %(symref)")
+    if not head or refs is None:
+        return None
+    return hashlib.sha1(f"{head.strip()}\n{refs}".encode()).hexdigest()
+
+
 def base_candidates(path: str) -> list[BaseCandidate]:
+    """`_base_candidates`, remembered until HEAD or any ref moves."""
+    key = _refs_fingerprint(path)
+    if key is not None:
+        with _candidates_lock:
+            hit = _candidates_cache.get(path)
+        if hit and hit[0] == key:
+            return list(hit[1])
+    result = _base_candidates(path)
+    # Only keep an answer the refs held still for: one worked out mid-fetch may
+    # reflect neither state, and must not be filed under the earlier one.
+    if key is not None and _refs_fingerprint(path) == key:
+        with _candidates_lock:
+            _candidates_cache[path] = (key, result)
+    return list(result)
+
+
+def _base_candidates(path: str) -> list[BaseCandidate]:
     """Every branch HEAD is built on top of, nearest first, then the main
     branch last. Nothing records what an unpushed stacked branch sits on, so
     this reads it from history: a branch tip that HEAD contains is a branch it
@@ -686,10 +730,13 @@ def ahead_behind(path: str, base: str, head: str = "HEAD") -> tuple[int, int]:
     return (int(ahead), int(behind))
 
 
-def dirty_count(path: str) -> int:
-    """Files with uncommitted changes, staged or not."""
-    out = _try_git(path, "status", "--porcelain") or ""
-    return sum(1 for line in out.splitlines() if line.strip())
+def dirty_count(path: str, untracked: int | None = None) -> int:
+    """Files with uncommitted changes, staged or not. A caller that has already
+    listed the untracked files passes how many, which spares git a second walk
+    of the whole tree looking for them - most of what `status` costs."""
+    args = ("status", "--porcelain") if untracked is None else ("status", "--porcelain", "--untracked-files=no")
+    out = _try_git(path, *args) or ""
+    return sum(1 for line in out.splitlines() if line.strip()) + (untracked or 0)
 
 
 @dataclass
@@ -707,6 +754,7 @@ class Summary:
     dirty: int = 0
     pr: object | None = None
     error: str | None = None
+    elapsed_ms: float = 0.0  # base detection plus the summary, for the catalog profile
 
 
 def summarise(wt: Worktree, base: str) -> Summary:
@@ -724,12 +772,18 @@ def summarise(wt: Worktree, base: str) -> Summary:
             removed=sum(int(r["removed"] or 0) for r in stats),
             last_commit=(_try_git(wt.path, "log", "-1", "--format=%ar") or "").strip(),
             behind=behind,
-            dirty=dirty_count(wt.path),
+            dirty=dirty_count(wt.path, untracked=sum(1 for r in stats if r.get("untracked"))),
         )
     except (GitError, ValueError) as exc:
         return Summary(wt, base, "", 0, 0, 0, 0, "", error=str(exc))
 
 
 def summarise_all(worktrees: list[Worktree], base_for: dict[str, str]) -> list[Summary]:
+    def one(w: Worktree) -> Summary:
+        started = time.perf_counter()
+        summary = summarise(w, base_for.get(w.id) or auto_base(w.path))
+        summary.elapsed_ms = (time.perf_counter() - started) * 1000
+        return summary
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
-        return list(pool.map(lambda w: summarise(w, base_for.get(w.id) or auto_base(w.path)), worktrees))
+        return list(pool.map(one, worktrees))

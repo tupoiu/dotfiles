@@ -75,7 +75,7 @@ features:
   pr_links: true           # look up each branch's PR with `gh`
   reviewed_state: true     # per-file reviewed checkboxes
   live_reload: true        # SSE push when the worktree changes
-  profiling: true          # stage timings for the diff path, shown at /profiles
+  profiling: true          # stage timings for diffs and the catalog, shown at /profiles
   hud: null                # the PR dashboard at /hud; null means "on when hud.repos is set"
 limits:
   max_inline_diff_bytes: 1500000   # above this the page loads file-by-file
@@ -102,7 +102,7 @@ hud:
   limit: 50                # most PRs per section
   timeout_seconds: 20.0
 state_db: "~/.local/state/diffweb/state.db"
-profile_log: "~/.local/state/diffweb/profiles.jsonl"
+profile_log: "~/.local/state/diffweb/profiles.jsonl"   # catalog loads go beside it, in profiles-catalog.jsonl
 profile_keep: 500          # older profiles are dropped
 ```
 
@@ -297,7 +297,10 @@ header, lists recent renders newest first with a stage bar: ref resolution,
 `git diff`, numstat, blob shas, serialisation, network, and render.
 The last two are measured by the page and posted back, because the wait the user
 complains about is mostly not the server's - on a 9-file branch it is roughly
-120ms of git and 95ms of rendering. Profiles land in `profile_log` as JSONL,
+120ms of git and 95ms of rendering. A second table times each catalog load:
+worktree discovery, the per-worktree summaries, PR lookups, reviewed counts
+and the template, plus the three slowest worktrees. The catalog is rendered on
+the server, so that is nearly the whole wait. Profiles land in `profile_log` as JSONL,
 capped at `profile_keep`.
 
 **HUD** (`/hud`, on when `hud.repos` is set). One page with my pull requests

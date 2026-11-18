@@ -22,6 +22,25 @@ Format - one entry per session, newest first:
 
 ---
 
+## 2026-11-18 - catalog load time, catalog profiles (Claude)
+
+- `/profiles` - did not help at first: it only timed the diff path, and the
+  slow page was the catalog. What found the cost was a scratch script that
+  wrapped `subprocess.run` and summed time per git subcommand. It showed one
+  `for-each-ref --merged` (~200ms in a repo with ~7k refs) per worktree on
+  every load. That script's per-stage and slowest-worktree view is now the
+  "catalog loads" table.
+- `poe diffweb-shot -- --port N / /profiles` - helped once trimmed to the page
+  I wanted. With four shots against a ~1s catalog on the real config, it ran
+  past two minutes and died on the last one ("Target page, context or browser
+  has been closed") rather than reporting which page was slow.
+  **Improve:** a per-page timeout that names the page, and print the load time
+  of each shot so the tool doubles as a crude timing check.
+- Mutation-checking the cache tests by hand (break the key with `sed`, rerun)
+  - helped: it showed that a HEAD-less key passed every test until a test
+  switched branch without moving a ref. `addopts = "-n 6"` makes
+  `-p no:xdist` fail with "unrecognized arguments: -n". Use `-n0` instead.
+
 ## 2026-11-17 - skeleton view (Claude)
 
 - `wt switch -c` - helped: a worktree of my own, so another session's
