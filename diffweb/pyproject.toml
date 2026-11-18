@@ -1,7 +1,7 @@
 # diffweb as a standalone tool, so people who do not use these dotfiles can
 # install it. The dotfiles' own `uv sync` does not use this file.
 #
-#   uv tool install "git+https://github.com/tupoiu/dotfiles#subdirectory=diffweb"
+#   uv tool install "git+https://github.com/tupoiu/dotfiles@diffweb#subdirectory=diffweb"
 #
 # The build needs `bun` on PATH (it bundles web/*.ts) and the network (it
 # vendors highlight.js and jsdiff) - see hatch_build.py.

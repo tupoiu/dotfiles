@@ -14,7 +14,7 @@ It is deliberately read-only and single-user: it binds `127.0.0.1`, shells out t
 You do not need these dotfiles to use diffweb. With [uv] and [bun] on PATH:
 
 ```console
-$ uv tool install "git+https://github.com/tupoiu/dotfiles#subdirectory=diffweb"
+$ uv tool install "git+https://github.com/tupoiu/dotfiles@diffweb#subdirectory=diffweb"
 $ diffweb --root '~/src/*'    # serves http://127.0.0.1:8765
 ```
 
