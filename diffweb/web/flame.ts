@@ -207,15 +207,52 @@ export function othersNode(projects: Project[], rootName: string): MapNode {
 function boxHtml(root: MapNode, name: string, tip: string, levels: number, scope: string, cls: string): string {
   const t = split(root.files);
   const small = cls ? 0 : SMALL;
-  const parts = `<span class="split"><span class="c">code <b>${fmt(t.code)}</b></span>` +
-    `<span class="t">tests <b>${fmt(t.test)}</b></span><span class="o">docs <b>${fmt(t.docs)}</b></span></span>`;
   const bars = fold(root, levels, 0, small);
   const rows = bars.map((b) => barHtml(b, scope)).join("");
   // 2px: the row's 1px margin each side, inside the box's inset outline.
   const min = Math.max(6, rowWidth(bars) + 2);
   return `<div class="pbox${cls}" style="flex: ${grow(total(t))} 1 0; min-width: ${min}px">` +
-    `<div class="phd" tabindex="0" data-tip="${esc(tip)}"><span class="pn">${esc(name)}</span>${parts}</div>` +
+    `<div class="phd" tabindex="0" data-tip="${esc(tip)}"><span class="pn">${esc(name)}</span>${countsHtml(t)}</div>` +
     `<div class="fkids">${rows}</div></div>`;
+}
+
+// A header's second line: its lines in the longest of these forms that fits
+// the box. All are drawn; fitCounts measures them and shows one.
+//   1. code 3,565  tests 0  docs 387
+//   2. c: 3,565  t: 0  d: 387
+//   3. 3,952
+//   4. nothing - the header's tooltip has it all.
+export function countsHtml(t: Split): string {
+  const kinds = [["c", "code", t.code], ["t", "tests", t.test], ["o", "docs", t.docs]] as const;
+  const form = (short: boolean) => kinds.map(([cls, word, n]) =>
+    `<span class="${cls}">${short ? `${word[0]}:` : word} <b>${fmt(n)}</b></span>`).join("");
+  return `<div class="pcounts"><span class="f" data-form="1">${form(false)}</span>` +
+    `<span class="f" data-form="2">${form(true)}</span>` +
+    `<span class="f" data-form="3"><b>${fmt(total(t))}</b></span></div>`;
+}
+
+// The first form no wider than `room`, by its index into `widths` (widest
+// first); `widths.length` when none fits.
+export function pickForm(widths: number[], room: number): number {
+  const i = widths.findIndex((w) => w <= room);
+  return i < 0 ? widths.length : i;
+}
+
+// Show each header's form that fits. Run after drawing, and on resize.
+export function fitCounts(root: HTMLElement): void {
+  for (const line of root.querySelectorAll<HTMLElement>(".pcounts")) {
+    const forms = [...line.querySelectorAll<HTMLElement>(".f")];
+    const cs = getComputedStyle(line);
+    const room = line.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    const pick = pickForm(forms.map((f) => f.getBoundingClientRect().width), room);
+    forms.forEach((f, i) => f.classList.toggle("on", i === pick));
+  }
+}
+
+// Refit whenever the map's width changes. Box widths follow it, and a redraw
+// (levels, scope) calls fitCounts itself.
+export function attachFit(root: HTMLElement): void {
+  new ResizeObserver(() => fitCounts(root)).observe(root);
 }
 
 // The tooltip: drawn by hand, so it appears at once (a native `title` waits

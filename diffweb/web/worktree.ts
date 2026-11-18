@@ -3,7 +3,7 @@ import { filePath, parseDiff, type DiffFile } from "./diff/parse.ts";
 import { addInterval, esc, renderBody, renderFile, type FileView, type Interval } from "./diff/render.ts";
 import { fileLines, highlightFile, highlightLine, languageFor, type HlLine } from "./diff/highlight.ts";
 import { skeletonHtml, type SkeletonResponse } from "./skeleton.ts";
-import { attachTips, mapHtml, type MapFile } from "./flame.ts";
+import { attachFit, attachTips, fitCounts, mapHtml, type MapFile } from "./flame.ts";
 
 // --- what the server sends ------------------------------------------------
 
@@ -870,6 +870,7 @@ function drawMap(): void {
   $flame.hidden = !$mapBox.checked || lastMap === null;
   if (lastMap === null) return;
   $flame.innerHTML = mapHtml(lastMap, levels, scope, el.dataset.wtName || "repo root");
+  fitCounts($flame);
 }
 
 function setScope(next: string): void {
@@ -878,6 +879,7 @@ function setScope(next: string): void {
 }
 
 attachTips($flame);
+attachFit($flame);
 $mapBox.addEventListener("change", () => {
   try { localStorage.setItem(MAP_KEY, $mapBox.checked ? "1" : "0"); } catch { /* private mode */ }
   drawMap();

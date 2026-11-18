@@ -1,7 +1,7 @@
 // The flame map's folding and HTML (web/flame.ts). Plain strings, no browser.
 
 import { expect, test } from "bun:test";
-import { MAX_PROJECTS, buildProjects, diffstat, fold, mapHtml, minWidth, tipFor, type Bar, type MapFile } from "../diffweb/web/flame.ts";
+import { MAX_PROJECTS, buildProjects, countsHtml, diffstat, fold, mapHtml, minWidth, pickForm, tipFor, type Bar, type MapFile } from "../diffweb/web/flame.ts";
 
 const f = (path: string, lines: number, project = "", kind: MapFile["kind"] = "code"): MapFile =>
   ({ path, added: lines, removed: 0, kind, project });
@@ -93,4 +93,24 @@ test("a box is at least wide enough for every bar in it to be hovered", () => {
   const deep = buildProjects([f("a/x/1.py", 5), f("a/x/2.py", 5), f("a/x/3.py", 5)])[0]!.root;
   // a/ sits over x/, which sits over three files: 3 + 1 + 3 + 1 + 3.
   expect(minWidth(fold(deep, 3)[0]!)).toBe(11);
+});
+
+test("a header's lines take the longest form that fits, or none", () => {
+  const widths = [210, 140, 40];  // full words, short letters, the total
+  expect(pickForm(widths, 400)).toBe(0);
+  expect(pickForm(widths, 210)).toBe(0);  // exactly fitting fits
+  expect(pickForm(widths, 209.5)).toBe(1);
+  expect(pickForm(widths, 140)).toBe(1);
+  expect(pickForm(widths, 60)).toBe(2);
+  expect(pickForm(widths, 39)).toBe(3);  // nothing shows
+  expect(pickForm(widths, 0)).toBe(3);
+});
+
+test("the header's forms carry en-GB numbers, short letters, and the total", () => {
+  const html = countsHtml({ code: 3565, test: 0, docs: 387 });
+  expect(html).toContain('code <b>3,565</b>');
+  expect(html).toContain('c: <b>3,565</b>');
+  expect(html).toContain('t: <b>0</b>');
+  expect(html).toContain('d: <b>387</b>');
+  expect(html).toContain('data-form="3"><b>3,952</b>');
 });
